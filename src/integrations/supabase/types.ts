@@ -458,6 +458,156 @@ export type Database = {
         }
         Relationships: []
       }
+      proposal_items: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          desconto: number | null
+          descricao: string
+          estoque: number | null
+          id: string
+          imagem_url: string | null
+          margem: number | null
+          preco_unitario: number
+          product_id: string | null
+          proposal_id: string
+          quantidade: number
+          total: number
+          unidade: string | null
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string
+          desconto?: number | null
+          descricao: string
+          estoque?: number | null
+          id?: string
+          imagem_url?: string | null
+          margem?: number | null
+          preco_unitario: number
+          product_id?: string | null
+          proposal_id: string
+          quantidade: number
+          total: number
+          unidade?: string | null
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string
+          desconto?: number | null
+          descricao?: string
+          estoque?: number | null
+          id?: string
+          imagem_url?: string | null
+          margem?: number | null
+          preco_unitario?: number
+          product_id?: string | null
+          proposal_id?: string
+          quantidade?: number
+          total?: number
+          unidade?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_items_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposals: {
+        Row: {
+          cliente_id: string
+          codigo: string
+          condicoes_comerciais: Json | null
+          created_at: string
+          data_proposta: string
+          desconto_total: number | null
+          despesas_adicionais: number | null
+          id: string
+          introducao: string | null
+          motivo_revisao: string | null
+          observacoes_internas: string | null
+          oportunidade_id: string | null
+          pdf_url: string | null
+          status: string
+          total_geral: number
+          total_itens: number
+          updated_at: string
+          validade: string
+          vendedor_id: string
+          versao: number
+        }
+        Insert: {
+          cliente_id: string
+          codigo: string
+          condicoes_comerciais?: Json | null
+          created_at?: string
+          data_proposta?: string
+          desconto_total?: number | null
+          despesas_adicionais?: number | null
+          id?: string
+          introducao?: string | null
+          motivo_revisao?: string | null
+          observacoes_internas?: string | null
+          oportunidade_id?: string | null
+          pdf_url?: string | null
+          status?: string
+          total_geral?: number
+          total_itens?: number
+          updated_at?: string
+          validade: string
+          vendedor_id: string
+          versao?: number
+        }
+        Update: {
+          cliente_id?: string
+          codigo?: string
+          condicoes_comerciais?: Json | null
+          created_at?: string
+          data_proposta?: string
+          desconto_total?: number | null
+          despesas_adicionais?: number | null
+          id?: string
+          introducao?: string | null
+          motivo_revisao?: string | null
+          observacoes_internas?: string | null
+          oportunidade_id?: string | null
+          pdf_url?: string | null
+          status?: string
+          total_geral?: number
+          total_itens?: number
+          updated_at?: string
+          validade?: string
+          vendedor_id?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_oportunidade_id_fkey"
+            columns: ["oportunidade_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null
