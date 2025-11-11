@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import {
@@ -11,7 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Phone, Mail, Building2, Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ClienteFormDialog } from "@/components/Clientes/ClienteFormDialog";
+import { Search, Phone, Mail, Building2, Eye } from "lucide-react";
 
 const mockClientes = [
   {
@@ -64,10 +65,7 @@ export default function Clientes() {
             Gerencie sua base de clientes e prospects
           </p>
         </div>
-        <Button className="gap-2">
-          <Plus className="h-4 w-4" />
-          Novo Cliente
-        </Button>
+        <ClienteFormDialog />
       </div>
 
       <Card className="glass-strong p-6">
