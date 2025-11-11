@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Plus, Trash2, Search, Calculator } from "lucide-react";
+import SimuladorROI from "@/components/Financeiro/SimuladorROI";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -335,11 +336,15 @@ export default function PropostaFormDialog({
 
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="cabecalho" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="cabecalho">Cabeçalho</TabsTrigger>
               <TabsTrigger value="itens">Itens</TabsTrigger>
               <TabsTrigger value="condicoes">Condições</TabsTrigger>
               <TabsTrigger value="totais">Totais</TabsTrigger>
+              <TabsTrigger value="roi">
+                <Calculator className="h-4 w-4 mr-2" />
+                ROI
+              </TabsTrigger>
             </TabsList>
 
             <ScrollArea className="h-[60vh] pr-4">
@@ -728,6 +733,14 @@ export default function PropostaFormDialog({
                     </div>
                   </div>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="roi" className="space-y-4">
+                <SimuladorROI
+                  propostaId={proposta?.id}
+                  investimentoInicial={totalGeral}
+                  modo="inline"
+                />
               </TabsContent>
             </ScrollArea>
           </Tabs>

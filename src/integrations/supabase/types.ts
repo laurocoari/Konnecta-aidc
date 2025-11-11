@@ -1025,6 +1025,68 @@ export type Database = {
           },
         ]
       }
+      roi_simulations: {
+        Row: {
+          created_at: string
+          created_by: string
+          custo_operacional_mensal: number
+          duracao_contrato_meses: number
+          id: string
+          investimento_total: number
+          lucro_apos_roi: number
+          lucro_mensal_estimado: number
+          lucro_total_contrato: number
+          nome_simulacao: string | null
+          observacoes: string | null
+          prazo_roi_meses: number
+          proposal_id: string | null
+          rentabilidade_percentual: number
+          retorno_mensal: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          custo_operacional_mensal: number
+          duracao_contrato_meses: number
+          id?: string
+          investimento_total: number
+          lucro_apos_roi: number
+          lucro_mensal_estimado: number
+          lucro_total_contrato: number
+          nome_simulacao?: string | null
+          observacoes?: string | null
+          prazo_roi_meses: number
+          proposal_id?: string | null
+          rentabilidade_percentual: number
+          retorno_mensal: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          custo_operacional_mensal?: number
+          duracao_contrato_meses?: number
+          id?: string
+          investimento_total?: number
+          lucro_apos_roi?: number
+          lucro_mensal_estimado?: number
+          lucro_total_contrato?: number
+          nome_simulacao?: string | null
+          observacoes?: string | null
+          prazo_roi_meses?: number
+          proposal_id?: string | null
+          rentabilidade_percentual?: number
+          retorno_mensal?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roi_simulations_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_brands: {
         Row: {
           brand_id: string
