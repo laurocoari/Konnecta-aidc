@@ -14,16 +14,270 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      clients: {
+        Row: {
+          cep: string
+          cidade: string
+          cnpj: string
+          contato_principal: string
+          created_at: string
+          email: string
+          endereco: string
+          estado: string
+          exclusive_partner_id: string | null
+          exclusivity_expires_at: string | null
+          exclusivity_status:
+            | Database["public"]["Enums"]["exclusivity_status"]
+            | null
+          id: string
+          ie: string | null
+          nome: string
+          observacoes: string | null
+          origin_partner_id: string | null
+          telefone: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          cep: string
+          cidade: string
+          cnpj: string
+          contato_principal: string
+          created_at?: string
+          email: string
+          endereco: string
+          estado: string
+          exclusive_partner_id?: string | null
+          exclusivity_expires_at?: string | null
+          exclusivity_status?:
+            | Database["public"]["Enums"]["exclusivity_status"]
+            | null
+          id?: string
+          ie?: string | null
+          nome: string
+          observacoes?: string | null
+          origin_partner_id?: string | null
+          telefone: string
+          tipo?: string
+          updated_at?: string
+        }
+        Update: {
+          cep?: string
+          cidade?: string
+          cnpj?: string
+          contato_principal?: string
+          created_at?: string
+          email?: string
+          endereco?: string
+          estado?: string
+          exclusive_partner_id?: string | null
+          exclusivity_expires_at?: string | null
+          exclusivity_status?:
+            | Database["public"]["Enums"]["exclusivity_status"]
+            | null
+          id?: string
+          ie?: string | null
+          nome?: string
+          observacoes?: string | null
+          origin_partner_id?: string | null
+          telefone?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_exclusive_partner_id_fkey"
+            columns: ["exclusive_partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_origin_partner_id_fkey"
+            columns: ["origin_partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opportunities: {
+        Row: {
+          anexos: Json | null
+          approved_at: string | null
+          approved_by: string | null
+          client_id: string
+          created_at: string
+          data_registro: string
+          data_validade_exclusividade: string | null
+          feedback_comercial: string | null
+          id: string
+          is_exclusive: boolean
+          observacoes: string | null
+          partner_id: string
+          product_name: string
+          status: Database["public"]["Enums"]["opportunity_status"]
+          tipo_oportunidade: string
+          updated_at: string
+          valor_estimado: number | null
+        }
+        Insert: {
+          anexos?: Json | null
+          approved_at?: string | null
+          approved_by?: string | null
+          client_id: string
+          created_at?: string
+          data_registro?: string
+          data_validade_exclusividade?: string | null
+          feedback_comercial?: string | null
+          id?: string
+          is_exclusive?: boolean
+          observacoes?: string | null
+          partner_id: string
+          product_name: string
+          status?: Database["public"]["Enums"]["opportunity_status"]
+          tipo_oportunidade: string
+          updated_at?: string
+          valor_estimado?: number | null
+        }
+        Update: {
+          anexos?: Json | null
+          approved_at?: string | null
+          approved_by?: string | null
+          client_id?: string
+          created_at?: string
+          data_registro?: string
+          data_validade_exclusividade?: string | null
+          feedback_comercial?: string | null
+          id?: string
+          is_exclusive?: boolean
+          observacoes?: string | null
+          partner_id?: string
+          product_name?: string
+          status?: Database["public"]["Enums"]["opportunity_status"]
+          tipo_oportunidade?: string
+          updated_at?: string
+          valor_estimado?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partners: {
+        Row: {
+          cidade: string
+          cnpj: string
+          comissao_percentual: number
+          created_at: string
+          email: string
+          estado: string
+          id: string
+          nome_fantasia: string
+          razao_social: string
+          status: string
+          telefone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cidade: string
+          cnpj: string
+          comissao_percentual?: number
+          created_at?: string
+          email: string
+          estado: string
+          id?: string
+          nome_fantasia: string
+          razao_social: string
+          status?: string
+          telefone: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cidade?: string
+          cnpj?: string
+          comissao_percentual?: number
+          created_at?: string
+          email?: string
+          estado?: string
+          id?: string
+          nome_fantasia?: string
+          razao_social?: string
+          status?: string
+          telefone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          full_name: string
+          id: string
+          phone: string | null
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          full_name: string
+          id: string
+          phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_client_exclusivity: {
+        Args: { p_cnpj: string }
+        Returns: {
+          client_exists: boolean
+          client_id: string
+          exclusivity_expires_at: string
+          is_active: boolean
+          partner_id: string
+          partner_name: string
+        }[]
+      }
     }
     Enums: {
-      [_ in never]: never
+      exclusivity_status: "ativa" | "expirada" | "suspensa"
+      opportunity_status:
+        | "em_analise"
+        | "aprovada"
+        | "em_negociacao"
+        | "convertida"
+        | "perdida"
+        | "devolvida"
+      user_role: "admin" | "comercial" | "revendedor" | "financeiro"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +404,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      exclusivity_status: ["ativa", "expirada", "suspensa"],
+      opportunity_status: [
+        "em_analise",
+        "aprovada",
+        "em_negociacao",
+        "convertida",
+        "perdida",
+        "devolvida",
+      ],
+      user_role: ["admin", "comercial", "revendedor", "financeiro"],
+    },
   },
 } as const
