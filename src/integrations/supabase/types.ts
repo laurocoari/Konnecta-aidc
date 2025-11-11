@@ -674,6 +674,7 @@ export type Database = {
           custo_medio: number | null
           descricao: string | null
           ean: string | null
+          especificacoes: Json | null
           estoque: number | null
           fornecedores_vinculados: Json | null
           galeria: Json | null
@@ -695,6 +696,7 @@ export type Database = {
           updated_at: string
           valor_locacao: number | null
           valor_venda: number | null
+          videos: Json | null
         }
         Insert: {
           brand_id?: string | null
@@ -707,6 +709,7 @@ export type Database = {
           custo_medio?: number | null
           descricao?: string | null
           ean?: string | null
+          especificacoes?: Json | null
           estoque?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
@@ -728,6 +731,7 @@ export type Database = {
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
+          videos?: Json | null
         }
         Update: {
           brand_id?: string | null
@@ -740,6 +744,7 @@ export type Database = {
           custo_medio?: number | null
           descricao?: string | null
           ean?: string | null
+          especificacoes?: Json | null
           estoque?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
@@ -761,6 +766,7 @@ export type Database = {
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
+          videos?: Json | null
         }
         Relationships: [
           {

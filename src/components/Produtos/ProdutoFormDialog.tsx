@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Package, DollarSign, FileText, Link2 } from "lucide-react";
+import { Package, DollarSign, FileText, Image, Video, Plus, Trash2, Upload } from "lucide-react";
 
 interface ProdutoFormDialogProps {
   open: boolean;
@@ -37,6 +37,7 @@ export function ProdutoFormDialog({
 }: ProdutoFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const [brands, setBrands] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState<any>({
     codigo: "",
     nome: "",
@@ -44,6 +45,7 @@ export function ProdutoFormDialog({
     tipo: "venda",
     descricao: "",
     imagem_principal: "",
+    galeria: [],
     brand_id: "",
     valor_custo: "",
     margem_lucro: "",
@@ -64,6 +66,8 @@ export function ProdutoFormDialog({
     cofins: "",
     observacoes_fiscais: "",
     status: "ativo",
+    especificacoes: [],
+    videos: [],
   });
 
   useEffect(() => {
@@ -79,6 +83,7 @@ export function ProdutoFormDialog({
         tipo: product.tipo || "venda",
         descricao: product.descricao || "",
         imagem_principal: product.imagem_principal || "",
+        galeria: product.galeria || [],
         brand_id: product.brand_id || "",
         valor_custo: product.valor_custo || "",
         margem_lucro: product.margem_lucro || "",
@@ -99,6 +104,8 @@ export function ProdutoFormDialog({
         cofins: product.cofins || "",
         observacoes_fiscais: product.observacoes_fiscais || "",
         status: product.status || "ativo",
+        especificacoes: product.especificacoes || [],
+        videos: product.videos || [],
       });
     } else {
       // Reset form
@@ -109,6 +116,7 @@ export function ProdutoFormDialog({
         tipo: "venda",
         descricao: "",
         imagem_principal: "",
+        galeria: [],
         brand_id: "",
         valor_custo: "",
         margem_lucro: "",
@@ -129,6 +137,8 @@ export function ProdutoFormDialog({
         cofins: "",
         observacoes_fiscais: "",
         status: "ativo",
+        especificacoes: [],
+        videos: [],
       });
     }
   }, [product, open]);
@@ -172,6 +182,105 @@ export function ProdutoFormDialog({
         calculateValorVenda(custo, margem);
       }
     }
+  };
+
+  const handleFileUpload = async (file: File, type: 'image' | 'video') => {
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${type}s/${fileName}`;
+
+      const { error: uploadError, data } = await supabase.storage
+        .from('product-media')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('product-media')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error: any) {
+      console.error('Error uploading file:', error);
+      toast.error('Erro ao fazer upload do arquivo');
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = await handleFileUpload(file, 'image');
+    if (url) {
+      setFormData((prev: any) => ({
+        ...prev,
+        galeria: [...(prev.galeria || []), url],
+      }));
+      toast.success('Imagem adicionada à galeria');
+    }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = await handleFileUpload(file, 'video');
+    if (url) {
+      setFormData((prev: any) => ({
+        ...prev,
+        videos: [...(prev.videos || []), { tipo: 'upload', url, titulo: file.name }],
+      }));
+      toast.success('Vídeo adicionado com sucesso');
+    }
+  };
+
+  const addYoutubeVideo = () => {
+    const url = prompt('Cole o link do vídeo do YouTube:');
+    if (url) {
+      setFormData((prev: any) => ({
+        ...prev,
+        videos: [...(prev.videos || []), { tipo: 'youtube', url, titulo: 'Vídeo do YouTube' }],
+      }));
+    }
+  };
+
+  const addSpecification = () => {
+    setFormData((prev: any) => ({
+      ...prev,
+      especificacoes: [...(prev.especificacoes || []), { nome: '', valor: '' }],
+    }));
+  };
+
+  const updateSpecification = (index: number, field: 'nome' | 'valor', value: string) => {
+    const newSpecs = [...formData.especificacoes];
+    newSpecs[index][field] = value;
+    setFormData((prev: any) => ({ ...prev, especificacoes: newSpecs }));
+  };
+
+  const removeSpecification = (index: number) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      especificacoes: prev.especificacoes.filter((_: any, i: number) => i !== index),
+    }));
+  };
+
+  const removeImage = (index: number) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      galeria: prev.galeria.filter((_: any, i: number) => i !== index),
+    }));
+  };
+
+  const removeVideo = (index: number) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      videos: prev.videos.filter((_: any, i: number) => i !== index),
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -244,9 +353,9 @@ export function ProdutoFormDialog({
                 <FileText className="h-4 w-4" />
                 Fiscal
               </TabsTrigger>
-              <TabsTrigger value="integracoes" className="gap-2">
-                <Link2 className="h-4 w-4" />
-                Integrações
+              <TabsTrigger value="midia" className="gap-2">
+                <Image className="h-4 w-4" />
+                Mídia & Especificações
               </TabsTrigger>
             </TabsList>
 
@@ -554,13 +663,168 @@ export function ProdutoFormDialog({
               </div>
             </TabsContent>
 
-            <TabsContent value="integracoes" className="space-y-4 mt-4">
-              <div className="text-center py-8 text-muted-foreground">
-                <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Funcionalidade de integrações em desenvolvimento</p>
-                <p className="text-sm mt-2">
-                  Em breve: vinculação com fornecedores, histórico de compras e movimentações
-                </p>
+            <TabsContent value="midia" className="space-y-6 mt-4">
+              {/* Galeria de Imagens */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Image className="h-4 w-4" />
+                    Galeria de Fotos
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('image-upload')?.click()}
+                    disabled={uploading}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    {uploading ? 'Enviando...' : 'Upload Foto'}
+                  </Button>
+                  <input
+                    id="image-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {formData.galeria?.map((url: string, index: number) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={url}
+                        alt={`Produto ${index + 1}`}
+                        className="w-full h-24 object-cover rounded border"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => removeImage(index)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {formData.galeria?.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhuma imagem adicionada
+                  </p>
+                )}
+              </div>
+
+              {/* Vídeos */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Video className="h-4 w-4" />
+                    Vídeos do Produto
+                  </Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addYoutubeVideo}
+                    >
+                      YouTube
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => document.getElementById('video-upload')?.click()}
+                      disabled={uploading}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {uploading ? 'Enviando...' : 'Upload Vídeo'}
+                    </Button>
+                  </div>
+                  <input
+                    id="video-upload"
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={handleVideoUpload}
+                  />
+                </div>
+                <div className="space-y-2">
+                  {formData.videos?.map((video: any, index: number) => (
+                    <div key={index} className="flex items-center gap-2 p-3 border rounded">
+                      <Video className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{video.titulo}</p>
+                        <p className="text-xs text-muted-foreground truncate">{video.url}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeVideo(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {formData.videos?.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhum vídeo adicionado
+                  </p>
+                )}
+              </div>
+
+              {/* Especificações Técnicas */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Especificações Técnicas
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addSpecification}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {formData.especificacoes?.map((spec: any, index: number) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder="Nome (ex: Processador)"
+                        value={spec.nome}
+                        onChange={(e) => updateSpecification(index, 'nome', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="Valor (ex: Intel Core i7)"
+                        value={spec.valor}
+                        onChange={(e) => updateSpecification(index, 'valor', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeSpecification(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {formData.especificacoes?.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhuma especificação adicionada
+                  </p>
+                )}
               </div>
             </TabsContent>
           </Tabs>
