@@ -55,7 +55,8 @@ export default function HistoricoVersoesDialog({
       .from("proposals")
       .select(`
         *,
-        cliente:clients(nome)
+        cliente:clients(nome),
+        modelo:proposal_templates(nome)
       `)
       .eq("codigo", codigo)
       .order("versao", { ascending: false });
@@ -131,6 +132,13 @@ export default function HistoricoVersoesDialog({
                         Motivo da Revisão:
                       </p>
                       <p className="text-sm">{versao.motivo_revisao}</p>
+                    </div>
+                  )}
+
+                  {versao.modelo?.nome && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <FileText className="h-3 w-3" />
+                      Modelo: {versao.modelo.nome}
                     </div>
                   )}
 

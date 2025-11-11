@@ -524,6 +524,54 @@ export type Database = {
           },
         ]
       }
+      proposal_templates: {
+        Row: {
+          cabecalho_html: string | null
+          condicoes_comerciais: string | null
+          created_at: string
+          created_by: string
+          estrutura_tabela: Json | null
+          id: string
+          logotipo_secundario: string | null
+          nome: string
+          observacoes_internas: string | null
+          rodape_html: string | null
+          status: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          cabecalho_html?: string | null
+          condicoes_comerciais?: string | null
+          created_at?: string
+          created_by: string
+          estrutura_tabela?: Json | null
+          id?: string
+          logotipo_secundario?: string | null
+          nome: string
+          observacoes_internas?: string | null
+          rodape_html?: string | null
+          status?: string
+          tipo: string
+          updated_at?: string
+        }
+        Update: {
+          cabecalho_html?: string | null
+          condicoes_comerciais?: string | null
+          created_at?: string
+          created_by?: string
+          estrutura_tabela?: Json | null
+          id?: string
+          logotipo_secundario?: string | null
+          nome?: string
+          observacoes_internas?: string | null
+          rodape_html?: string | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       proposals: {
         Row: {
           cliente_id: string
@@ -535,6 +583,7 @@ export type Database = {
           despesas_adicionais: number | null
           id: string
           introducao: string | null
+          modelo_id: string | null
           motivo_revisao: string | null
           observacoes_internas: string | null
           oportunidade_id: string | null
@@ -557,6 +606,7 @@ export type Database = {
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
+          modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
@@ -579,6 +629,7 @@ export type Database = {
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
+          modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
@@ -597,6 +648,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_modelo_id_fkey"
+            columns: ["modelo_id"]
+            isOneToOne: false
+            referencedRelation: "proposal_templates"
             referencedColumns: ["id"]
           },
           {

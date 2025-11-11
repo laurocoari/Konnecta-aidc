@@ -43,10 +43,12 @@ export default function PropostaFormDialog({
   const [loading, setLoading] = useState(false);
   const [clientes, setClientes] = useState<any[]>([]);
   const [produtos, setProdutos] = useState<any[]>([]);
+  const [modelos, setModelos] = useState<any[]>([]);
   const [searchProduto, setSearchProduto] = useState("");
   const [items, setItems] = useState<ProposalItem[]>([]);
   
   const [formData, setFormData] = useState({
+    modelo_id: "",
     cliente_id: "",
     data_proposta: new Date().toISOString().split('T')[0],
     validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -68,6 +70,7 @@ export default function PropostaFormDialog({
     if (open) {
       loadClientes();
       loadProdutos();
+      loadModelos();
       if (proposta) {
         loadPropostaData();
       }
@@ -101,6 +104,39 @@ export default function PropostaFormDialog({
     setProdutos(data || []);
   };
 
+  const loadModelos = async () => {
+    const { data, error } = await supabase
+      .from("proposal_templates")
+      .select("*")
+      .eq("status", "ativo")
+      .order("nome");
+    
+    if (error) {
+      toast.error("Erro ao carregar modelos");
+      return;
+    }
+    setModelos(data || []);
+  };
+
+  const aplicarModelo = (modeloId: string) => {
+    const modelo = modelos.find((m) => m.id === modeloId);
+    if (!modelo) return;
+
+    setFormData({
+      ...formData,
+      modelo_id: modeloId,
+      introducao: modelo.cabecalho_html || formData.introducao,
+      condicoes_comerciais: modelo.condicoes_comerciais 
+        ? {
+            ...formData.condicoes_comerciais,
+            forma_pagamento: modelo.condicoes_comerciais,
+          }
+        : formData.condicoes_comerciais,
+    });
+
+    toast.success(`Modelo "${modelo.nome}" aplicado!`);
+  };
+
   const loadPropostaData = async () => {
     if (!proposta?.id) return;
 
@@ -116,6 +152,7 @@ export default function PropostaFormDialog({
 
     setItems(itemsData || []);
     setFormData({
+      modelo_id: proposta.modelo_id || "",
       cliente_id: proposta.cliente_id,
       data_proposta: proposta.data_proposta,
       validade: proposta.validade,
@@ -218,6 +255,7 @@ export default function PropostaFormDialog({
       const proposalData = {
         codigo,
         versao: proposta?.versao || 1,
+        modelo_id: formData.modelo_id || null,
         cliente_id: formData.cliente_id,
         vendedor_id: user.id,
         data_proposta: formData.data_proposta,
@@ -306,6 +344,32 @@ export default function PropostaFormDialog({
 
             <ScrollArea className="h-[60vh] pr-4">
               <TabsContent value="cabecalho" className="space-y-4">
+                <div>
+                  <Label>Selecionar Modelo (Opcional)</Label>
+                  <Select
+                    value={formData.modelo_id}
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, modelo_id: value });
+                      aplicarModelo(value);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Escolha um modelo pronto ou crie do zero" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Nenhum (criar do zero)</SelectItem>
+                      {modelos.map((modelo) => (
+                        <SelectItem key={modelo.id} value={modelo.id}>
+                          {modelo.nome} ({modelo.tipo})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Aplicar modelo preenche automaticamente introdução e condições
+                  </p>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <Label>Cliente *</Label>
