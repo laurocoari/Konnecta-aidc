@@ -1034,6 +1034,20 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "fk_supplier_brands_brand"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_supplier_brands_supplier"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "supplier_brands_brand_id_fkey"
             columns: ["brand_id"]
             isOneToOne: false
@@ -1041,6 +1055,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      suppliers: {
+        Row: {
+          categoria: string | null
+          cep: string | null
+          cidade: string | null
+          cnpj: string
+          contato_principal: string | null
+          created_at: string
+          email: string | null
+          endereco: string | null
+          estado: string | null
+          id: string
+          nome: string
+          observacoes: string | null
+          status: string
+          telefone: string | null
+          updated_at: string
+        }
+        Insert: {
+          categoria?: string | null
+          cep?: string | null
+          cidade?: string | null
+          cnpj: string
+          contato_principal?: string | null
+          created_at?: string
+          email?: string | null
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          categoria?: string | null
+          cep?: string | null
+          cidade?: string | null
+          cnpj?: string
+          contato_principal?: string | null
+          created_at?: string
+          email?: string | null
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome?: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
