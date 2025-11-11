@@ -21,7 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, TrendingUp, FileText, Users, DollarSign, AlertCircle, Calendar } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Plus, FileText, DollarSign, AlertCircle, Calendar, Download, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -43,11 +46,18 @@ export default function CentralParceiro() {
   const [exclusivityWarning, setExclusivityWarning] = useState<any>(null);
   const [partner, setPartner] = useState<any>(null);
   const [opportunities, setOpportunities] = useState<any[]>([]);
+  const [proposals, setProposals] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
+  const [generateProposal, setGenerateProposal] = useState(false);
+  const [activeTab, setActiveTab] = useState("opportunities");
 
   useEffect(() => {
     if (user) {
       loadPartnerData();
       loadOpportunities();
+      loadProposals();
+      loadProducts();
     }
   }, [user]);
 
@@ -93,6 +103,52 @@ export default function CentralParceiro() {
       } else {
         setOpportunities(data || []);
       }
+    }
+  };
+
+  const loadProposals = async () => {
+    const { data: partnerData } = await supabase
+      .from("partners")
+      .select("id")
+      .eq("user_id", user?.id)
+      .maybeSingle();
+
+    if (partnerData) {
+      const { data, error } = await supabase
+        .from("partner_proposals")
+        .select(`
+          *,
+          client_id (
+            nome,
+            cnpj
+          ),
+          opportunity_id (
+            tipo_oportunidade,
+            product_name
+          )
+        `)
+        .eq("partner_id", partnerData.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading proposals:", error);
+      } else {
+        setProposals(data || []);
+      }
+    }
+  };
+
+  const loadProducts = async () => {
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .eq("status", "ativo")
+      .order("nome");
+
+    if (error) {
+      console.error("Error loading products:", error);
+    } else {
+      setProducts(data || []);
     }
   };
 
@@ -171,23 +227,53 @@ export default function CentralParceiro() {
       }
 
       // Create opportunity
-      const { error: oppError } = await supabase
+      const { data: newOpportunity, error: oppError } = await supabase
         .from("opportunities")
         .insert({
           partner_id: partner.id,
           client_id: clientId,
-          product_name: formData.get("product") as string,
+          product_name: selectedProducts.map(p => p.nome).join(", ") || formData.get("product") as string,
           tipo_oportunidade: formData.get("tipo") as string,
           valor_estimado: parseFloat(formData.get("valor") as string) || null,
           observacoes: formData.get("observacoes") as string,
           data_validade_exclusividade: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
           status: "em_analise",
-        });
+        })
+        .select()
+        .single();
 
       if (oppError) throw oppError;
 
-      toast.success("Oportunidade registrada com sucesso!");
+      // If generate proposal is checked, create proposal
+      if (generateProposal && selectedProducts.length > 0) {
+        const { error: proposalError } = await supabase
+          .from("partner_proposals")
+          .insert({
+            partner_id: partner.id,
+            opportunity_id: newOpportunity.id,
+            client_id: clientId,
+            products: selectedProducts.map(p => ({
+              id: p.id,
+              nome: p.nome,
+              descricao: p.descricao,
+              imagem_url: p.imagem_url,
+              quantidade: p.quantidade || 1
+            })),
+            observacoes: formData.get("observacoes") as string,
+            status: "aguardando"
+          });
+
+        if (proposalError) throw proposalError;
+        
+        toast.success("Oportunidade e proposta registradas com sucesso!");
+        loadProposals();
+      } else {
+        toast.success("Oportunidade registrada com sucesso!");
+      }
+
       setOpen(false);
+      setSelectedProducts([]);
+      setGenerateProposal(false);
       loadOpportunities();
     } catch (error: any) {
       toast.error(error.message || "Erro ao registrar oportunidade");
@@ -203,13 +289,35 @@ export default function CentralParceiro() {
     convertidas: opportunities.filter(o => o.status === "convertida").length,
   };
 
+  const proposalStatusColors = {
+    aguardando: "warning",
+    cotada: "default",
+    enviada: "default",
+    convertida: "success",
+  } as const;
+
+  const toggleProductSelection = (product: any) => {
+    const exists = selectedProducts.find(p => p.id === product.id);
+    if (exists) {
+      setSelectedProducts(selectedProducts.filter(p => p.id !== product.id));
+    } else {
+      setSelectedProducts([...selectedProducts, { ...product, quantidade: 1 }]);
+    }
+  };
+
+  const updateProductQuantity = (productId: string, quantidade: number) => {
+    setSelectedProducts(selectedProducts.map(p => 
+      p.id === productId ? { ...p, quantidade } : p
+    ));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Central do Parceiro</h1>
           <p className="text-muted-foreground">
-            Gerencie suas oportunidades e clientes
+            Gerencie suas oportunidades e propostas
           </p>
         </div>
 
@@ -342,6 +450,69 @@ export default function CentralParceiro() {
                       placeholder="Descreva a necessidade do cliente..."
                     />
                   </div>
+
+                  <div className="space-y-4 border-t pt-4">
+                    <Label>Produtos (opcional)</Label>
+                    <ScrollArea className="h-[300px] rounded-md border p-4">
+                      <div className="grid gap-4">
+                        {products.map((product) => (
+                          <div
+                            key={product.id}
+                            className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                              selectedProducts.find(p => p.id === product.id)
+                                ? "border-primary bg-primary/5"
+                                : "hover:bg-muted/50"
+                            }`}
+                            onClick={() => toggleProductSelection(product)}
+                          >
+                            {product.imagem_url && (
+                              <img
+                                src={product.imagem_url}
+                                alt={product.nome}
+                                className="w-16 h-16 object-cover rounded"
+                              />
+                            )}
+                            <div className="flex-1">
+                              <h4 className="font-medium">{product.nome}</h4>
+                              <p className="text-sm text-muted-foreground line-clamp-2">
+                                {product.descricao}
+                              </p>
+                              <Badge variant="outline" className="mt-1">
+                                {product.categoria}
+                              </Badge>
+                            </div>
+                            {selectedProducts.find(p => p.id === product.id) && (
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={selectedProducts.find(p => p.id === product.id)?.quantidade || 1}
+                                  onChange={(e) => updateProductQuantity(product.id, parseInt(e.target.value) || 1)}
+                                  className="w-20"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
+                    {selectedProducts.length > 0 && (
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="generate-proposal"
+                          checked={generateProposal}
+                          onCheckedChange={(checked) => setGenerateProposal(checked as boolean)}
+                        />
+                        <Label
+                          htmlFor="generate-proposal"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          Gerar proposta comercial agora (sem valores)
+                        </Label>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -376,83 +547,172 @@ export default function CentralParceiro() {
         </Card>
       </div>
 
-      <Card className="glass-strong p-6">
-        <h3 className="mb-4 text-lg font-semibold">Minhas Oportunidades</h3>
-        <div className="space-y-4">
-          {opportunities.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              Nenhuma oportunidade cadastrada ainda
-            </p>
-          ) : (
-            opportunities.map((opp) => (
-              <Card key={opp.id} className="glass p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="rounded-lg bg-primary/10 p-3">
-                      <FileText className="h-6 w-6 text-primary" />
-                    </div>
-                    
-                    <div className="flex-1 space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold text-lg">
-                            {opp.client_id?.nome || "Cliente"}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {opp.product_name} - {opp.tipo_oportunidade}
-                          </p>
-                        </div>
-                        <Badge variant={statusColors[opp.status as keyof typeof statusColors]}>
-                          {opp.status.replace("_", " ")}
-                        </Badge>
-                      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="opportunities">
+            <FileText className="h-4 w-4 mr-2" />
+            Oportunidades
+          </TabsTrigger>
+          <TabsTrigger value="proposals">
+            <Package className="h-4 w-4 mr-2" />
+            Minhas Propostas
+          </TabsTrigger>
+        </TabsList>
 
-                      <div className="grid grid-cols-3 gap-4">
-                        {opp.valor_estimado && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Valor</p>
-                            <div className="mt-1 flex items-center gap-1 font-semibold text-success">
-                              <DollarSign className="h-4 w-4" />
-                              R$ {opp.valor_estimado.toLocaleString("pt-BR")}
+        <TabsContent value="opportunities" className="space-y-4">
+          <Card className="glass-strong p-6">
+            <h3 className="mb-4 text-lg font-semibold">Minhas Oportunidades</h3>
+            <div className="space-y-4">
+              {opportunities.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  Nenhuma oportunidade cadastrada ainda
+                </p>
+              ) : (
+                opportunities.map((opp) => (
+                  <Card key={opp.id} className="glass p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="rounded-lg bg-primary/10 p-3">
+                          <FileText className="h-6 w-6 text-primary" />
+                        </div>
+                        
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h3 className="font-semibold text-lg">
+                                {opp.client_id?.nome || "Cliente"}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                {opp.product_name} - {opp.tipo_oportunidade}
+                              </p>
+                            </div>
+                            <Badge variant={statusColors[opp.status as keyof typeof statusColors]}>
+                              {opp.status.replace("_", " ")}
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4">
+                            {opp.valor_estimado && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Valor</p>
+                                <div className="mt-1 flex items-center gap-1 font-semibold text-success">
+                                  <DollarSign className="h-4 w-4" />
+                                  R$ {opp.valor_estimado.toLocaleString("pt-BR")}
+                                </div>
+                              </div>
+                            )}
+
+                            <div>
+                              <p className="text-xs text-muted-foreground">Cadastrado em</p>
+                              <div className="mt-1 flex items-center gap-1 text-sm">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(opp.created_at).toLocaleDateString("pt-BR")}
+                              </div>
+                            </div>
+
+                            {opp.data_validade_exclusividade && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Exclusividade até</p>
+                                <div className="mt-1 flex items-center gap-1 text-sm">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(opp.data_validade_exclusividade).toLocaleDateString("pt-BR")}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {opp.feedback_comercial && (
+                            <div className="rounded-lg bg-muted/50 p-3">
+                              <p className="text-sm font-medium">Feedback Comercial:</p>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {opp.feedback_comercial}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="proposals" className="space-y-4">
+          <Card className="glass-strong p-6">
+            <h3 className="mb-4 text-lg font-semibold">Propostas Comerciais</h3>
+            <div className="space-y-4">
+              {proposals.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  Nenhuma proposta gerada ainda
+                </p>
+              ) : (
+                proposals.map((proposal) => (
+                  <Card key={proposal.id} className="glass p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="rounded-lg bg-primary/10 p-3">
+                          <Package className="h-6 w-6 text-primary" />
+                        </div>
+                        
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h3 className="font-semibold text-lg">
+                                {proposal.client_id?.nome || "Cliente"}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                {proposal.opportunity_id?.product_name || "Produtos múltiplos"} - {proposal.opportunity_id?.tipo_oportunidade}
+                              </p>
+                            </div>
+                            <Badge variant={proposalStatusColors[proposal.status as keyof typeof proposalStatusColors]}>
+                              {proposal.status}
+                            </Badge>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {proposal.products?.map((product: any, idx: number) => (
+                              <Badge key={idx} variant="outline">
+                                {product.nome} x{product.quantidade || 1}
+                              </Badge>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Criada em</p>
+                              <div className="mt-1 flex items-center gap-1 text-sm">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(proposal.created_at).toLocaleDateString("pt-BR")}
+                              </div>
+                            </div>
+                            <div>
+                              <Button variant="outline" size="sm" className="gap-2">
+                                <Download className="h-3 w-3" />
+                                Baixar PDF
+                              </Button>
                             </div>
                           </div>
-                        )}
 
-                        <div>
-                          <p className="text-xs text-muted-foreground">Cadastrado em</p>
-                          <div className="mt-1 flex items-center gap-1 text-sm">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(opp.created_at).toLocaleDateString("pt-BR")}
-                          </div>
-                        </div>
-
-                        {opp.data_validade_exclusividade && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Exclusividade até</p>
-                            <div className="mt-1 flex items-center gap-1 text-sm">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(opp.data_validade_exclusividade).toLocaleDateString("pt-BR")}
+                          {proposal.observacoes && (
+                            <div className="rounded-lg bg-muted/50 p-3">
+                              <p className="text-sm font-medium">Observações:</p>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {proposal.observacoes}
+                              </p>
                             </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {opp.feedback_comercial && (
-                        <div className="rounded-lg bg-muted/50 p-3">
-                          <p className="text-sm font-medium">Feedback Comercial:</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {opp.feedback_comercial}
-                          </p>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </Card>
-            ))
-          )}
-        </div>
-      </Card>
+                  </Card>
+                ))
+              )}
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

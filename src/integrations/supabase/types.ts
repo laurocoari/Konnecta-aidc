@@ -176,6 +176,67 @@ export type Database = {
           },
         ]
       }
+      partner_proposals: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          observacoes: string | null
+          opportunity_id: string
+          partner_id: string
+          pdf_url: string | null
+          products: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          observacoes?: string | null
+          opportunity_id: string
+          partner_id: string
+          pdf_url?: string | null
+          products?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          observacoes?: string | null
+          opportunity_id?: string
+          partner_id?: string
+          pdf_url?: string | null
+          products?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_proposals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_proposals_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_proposals_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       partners: {
         Row: {
           cidade: string
@@ -221,6 +282,54 @@ export type Database = {
           telefone?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          categoria: string
+          codigo: string
+          created_at: string
+          descricao: string | null
+          estoque: number | null
+          id: string
+          imagem_url: string | null
+          nome: string
+          status: string
+          tipo: string
+          updated_at: string
+          valor_locacao: number | null
+          valor_venda: number | null
+        }
+        Insert: {
+          categoria: string
+          codigo: string
+          created_at?: string
+          descricao?: string | null
+          estoque?: number | null
+          id?: string
+          imagem_url?: string | null
+          nome: string
+          status?: string
+          tipo: string
+          updated_at?: string
+          valor_locacao?: number | null
+          valor_venda?: number | null
+        }
+        Update: {
+          categoria?: string
+          codigo?: string
+          created_at?: string
+          descricao?: string | null
+          estoque?: number | null
+          id?: string
+          imagem_url?: string | null
+          nome?: string
+          status?: string
+          tipo?: string
+          updated_at?: string
+          valor_locacao?: number | null
+          valor_venda?: number | null
         }
         Relationships: []
       }
