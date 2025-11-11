@@ -13,8 +13,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 const adminNavigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "comercial", "financeiro"] },
@@ -36,21 +34,7 @@ const partnerNavigation = [
 ];
 
 export function Sidebar() {
-  const { user } = useAuth();
-  const [userRole, setUserRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (user) {
-      supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single()
-        .then(({ data }) => {
-          setUserRole(data?.role || "revendedor");
-        });
-    }
-  }, [user]);
+  const { userRole } = useAuth();
 
   const navigation = userRole === "revendedor" ? partnerNavigation : adminNavigation.filter(
     (item) => !item.roles || item.roles.includes(userRole || "")
