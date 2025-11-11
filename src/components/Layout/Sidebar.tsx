@@ -20,6 +20,7 @@ const adminNavigation = [
   { name: "Clientes", href: "/clientes", icon: Users, roles: ["admin", "comercial"] },
   { name: "Funil de Vendas", href: "/funil", icon: TrendingUp, roles: ["admin", "comercial"] },
   { name: "Produtos", href: "/produtos", icon: Package, roles: ["admin", "comercial"] },
+  { name: "Marcas", href: "/marcas", icon: Package, roles: ["admin"] },
   { name: "Propostas", href: "/propostas", icon: FileText, roles: ["admin", "comercial"] },
   { name: "Contratos", href: "/contratos", icon: FileText, roles: ["admin", "comercial", "financeiro"] },
   { name: "Modelos", href: "/modelos", icon: FileStack, roles: ["admin"] },

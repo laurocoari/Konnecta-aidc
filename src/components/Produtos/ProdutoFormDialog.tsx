@@ -36,6 +36,7 @@ export function ProdutoFormDialog({
   onClose,
 }: ProdutoFormDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [brands, setBrands] = useState<any[]>([]);
   const [formData, setFormData] = useState<any>({
     codigo: "",
     nome: "",
@@ -43,6 +44,7 @@ export function ProdutoFormDialog({
     tipo: "venda",
     descricao: "",
     imagem_principal: "",
+    brand_id: "",
     valor_custo: "",
     margem_lucro: "",
     valor_venda: "",
@@ -65,6 +67,10 @@ export function ProdutoFormDialog({
   });
 
   useEffect(() => {
+    loadBrands();
+  }, []);
+
+  useEffect(() => {
     if (product) {
       setFormData({
         codigo: product.codigo || "",
@@ -73,6 +79,7 @@ export function ProdutoFormDialog({
         tipo: product.tipo || "venda",
         descricao: product.descricao || "",
         imagem_principal: product.imagem_principal || "",
+        brand_id: product.brand_id || "",
         valor_custo: product.valor_custo || "",
         margem_lucro: product.margem_lucro || "",
         valor_venda: product.valor_venda || "",
@@ -102,6 +109,7 @@ export function ProdutoFormDialog({
         tipo: "venda",
         descricao: "",
         imagem_principal: "",
+        brand_id: "",
         valor_custo: "",
         margem_lucro: "",
         valor_venda: "",
@@ -124,6 +132,21 @@ export function ProdutoFormDialog({
       });
     }
   }, [product, open]);
+
+  const loadBrands = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("brands")
+        .select("*")
+        .eq("status", "ativa")
+        .order("nome", { ascending: true });
+
+      if (error) throw error;
+      setBrands(data || []);
+    } catch (error: any) {
+      console.error("Error loading brands:", error);
+    }
+  };
 
   const calculateValorVenda = (custo: number, margem: number) => {
     if (custo && margem) {
@@ -250,7 +273,7 @@ export function ProdutoFormDialog({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="categoria">Categoria *</Label>
                   <Input
@@ -260,6 +283,22 @@ export function ProdutoFormDialog({
                     placeholder="Hardware, Equipamento, Software..."
                     required
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="brand_id">Marca</Label>
+                  <Select value={formData.brand_id} onValueChange={(value) => handleChange("brand_id", value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a marca" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Nenhuma</SelectItem>
+                      {brands.map((brand) => (
+                        <SelectItem key={brand.id} value={brand.id}>
+                          {brand.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tipo">Tipo *</Label>

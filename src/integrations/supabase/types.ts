@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      brands: {
+        Row: {
+          created_at: string
+          id: string
+          logo_url: string | null
+          nome: string
+          observacoes: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          nome: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          nome?: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           cep: string
@@ -631,6 +661,7 @@ export type Database = {
       }
       products: {
         Row: {
+          brand_id: string | null
           categoria: string
           cfop: string | null
           codigo: string
@@ -663,6 +694,7 @@ export type Database = {
           valor_venda: number | null
         }
         Insert: {
+          brand_id?: string | null
           categoria: string
           cfop?: string | null
           codigo: string
@@ -695,6 +727,7 @@ export type Database = {
           valor_venda?: number | null
         }
         Update: {
+          brand_id?: string | null
           categoria?: string
           cfop?: string | null
           codigo?: string
@@ -726,7 +759,15 @@ export type Database = {
           valor_locacao?: number | null
           valor_venda?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -968,6 +1009,35 @@ export type Database = {
             columns: ["oportunidade_id"]
             isOneToOne: false
             referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_brands: {
+        Row: {
+          brand_id: string
+          created_at: string
+          id: string
+          supplier_id: string
+        }
+        Insert: {
+          brand_id: string
+          created_at?: string
+          id?: string
+          supplier_id: string
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string
+          id?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_brands_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
             referencedColumns: ["id"]
           },
         ]
