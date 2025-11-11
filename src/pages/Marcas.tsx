@@ -190,10 +190,10 @@ export default function Marcas() {
                         <img
                           src={marca.logo_url}
                           alt={marca.nome}
-                          className="h-10 w-10 object-contain rounded"
+                          className="h-16 w-16 object-contain rounded"
                         />
                       ) : (
-                        <div className="h-10 w-10 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
+                        <div className="h-16 w-16 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
                           N/A
                         </div>
                       )}
