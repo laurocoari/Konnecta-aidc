@@ -9,23 +9,53 @@ import {
   DollarSign,
   Settings,
   TrendingUp,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Clientes", href: "/clientes", icon: Users },
-  { name: "Funil de Vendas", href: "/funil", icon: TrendingUp },
-  { name: "Produtos", href: "/produtos", icon: Package },
-  { name: "Propostas", href: "/propostas", icon: FileText },
-  { name: "Contratos", href: "/contratos", icon: FileText },
-  { name: "Fornecedores", href: "/fornecedores", icon: Building2 },
-  { name: "Revendedores", href: "/revendedores", icon: UserCheck },
-  { name: "Financeiro", href: "/financeiro", icon: DollarSign },
+const adminNavigation = [
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "comercial", "financeiro"] },
+  { name: "Clientes", href: "/clientes", icon: Users, roles: ["admin", "comercial"] },
+  { name: "Funil de Vendas", href: "/funil", icon: TrendingUp, roles: ["admin", "comercial"] },
+  { name: "Produtos", href: "/produtos", icon: Package, roles: ["admin", "comercial"] },
+  { name: "Propostas", href: "/propostas", icon: FileText, roles: ["admin", "comercial"] },
+  { name: "Contratos", href: "/contratos", icon: FileText, roles: ["admin", "comercial", "financeiro"] },
+  { name: "Fornecedores", href: "/fornecedores", icon: Building2, roles: ["admin", "comercial"] },
+  { name: "Revendedores", href: "/revendedores", icon: UserCheck, roles: ["admin", "comercial"] },
+  { name: "Gerenciar Oportunidades", href: "/gerenciar-oportunidades", icon: ClipboardCheck, roles: ["admin", "comercial"] },
+  { name: "Financeiro", href: "/financeiro", icon: DollarSign, roles: ["admin", "financeiro"] },
+  { name: "Configurações", href: "/configuracoes", icon: Settings, roles: ["admin", "comercial", "financeiro"] },
+];
+
+const partnerNavigation = [
+  { name: "Central do Parceiro", href: "/central-parceiro", icon: LayoutDashboard },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
 export function Sidebar() {
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+        .then(({ data }) => {
+          setUserRole(data?.role || "revendedor");
+        });
+    }
+  }, [user]);
+
+  const navigation = userRole === "revendedor" ? partnerNavigation : adminNavigation.filter(
+    (item) => !item.roles || item.roles.includes(userRole || "")
+  );
+
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-sidebar">
       <div className="flex h-16 items-center border-b border-border px-6">
@@ -37,7 +67,7 @@ export function Sidebar() {
           <NavLink
             key={item.name}
             to={item.href}
-            end={item.href === "/"}
+            end={item.href === "/" || item.href === "/central-parceiro"}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

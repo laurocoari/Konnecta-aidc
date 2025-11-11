@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Sidebar } from "@/components/Layout/Sidebar";
 import { Header } from "@/components/Layout/Header";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Clientes from "./pages/Clientes";
 import Funil from "./pages/Funil";
@@ -15,6 +16,9 @@ import Revendedores from "./pages/Revendedores";
 import Contratos from "./pages/Contratos";
 import Financeiro from "./pages/Financeiro";
 import Configuracoes from "./pages/Configuracoes";
+import Auth from "./pages/Auth";
+import CentralParceiro from "./pages/CentralParceiro";
+import GerenciarOportunidades from "./pages/GerenciarOportunidades";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,27 +29,39 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <div className="flex min-h-screen w-full bg-background">
-          <Sidebar />
-          <div className="flex flex-1 flex-col">
-            <Header />
-            <main className="ml-64 mt-16 flex-1 p-6">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/clientes" element={<Clientes />} />
-                <Route path="/funil" element={<Funil />} />
-                <Route path="/produtos" element={<Produtos />} />
-                <Route path="/propostas" element={<Propostas />} />
-                <Route path="/contratos" element={<Contratos />} />
-                <Route path="/fornecedores" element={<Fornecedores />} />
-                <Route path="/revendedores" element={<Revendedores />} />
-                <Route path="/financeiro" element={<Financeiro />} />
-                <Route path="/configuracoes" element={<Configuracoes />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </main>
-          </div>
-        </div>
+        <Routes>
+          <Route path="/auth" element={<Auth />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <div className="flex min-h-screen w-full bg-background">
+                  <Sidebar />
+                  <div className="flex flex-1 flex-col">
+                    <Header />
+                    <main className="ml-64 mt-16 flex-1 p-6">
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/clientes" element={<Clientes />} />
+                        <Route path="/funil" element={<Funil />} />
+                        <Route path="/produtos" element={<Produtos />} />
+                        <Route path="/propostas" element={<Propostas />} />
+                        <Route path="/contratos" element={<Contratos />} />
+                        <Route path="/fornecedores" element={<Fornecedores />} />
+                        <Route path="/revendedores" element={<Revendedores />} />
+                        <Route path="/financeiro" element={<Financeiro />} />
+                        <Route path="/configuracoes" element={<Configuracoes />} />
+                        <Route path="/central-parceiro" element={<CentralParceiro />} />
+                        <Route path="/gerenciar-oportunidades" element={<GerenciarOportunidades />} />
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </main>
+                  </div>
+                </div>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
