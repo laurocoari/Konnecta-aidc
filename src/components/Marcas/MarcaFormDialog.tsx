@@ -37,6 +37,7 @@ export function MarcaFormDialog({
   const [formData, setFormData] = useState({
     nome: "",
     logo_url: "",
+    descricao: "",
     status: "ativa",
     observacoes: "",
   });
@@ -46,6 +47,7 @@ export function MarcaFormDialog({
       setFormData({
         nome: marca.nome || "",
         logo_url: marca.logo_url || "",
+        descricao: marca.descricao || "",
         status: marca.status || "ativa",
         observacoes: marca.observacoes || "",
       });
@@ -53,6 +55,7 @@ export function MarcaFormDialog({
       setFormData({
         nome: "",
         logo_url: "",
+        descricao: "",
         status: "ativa",
         observacoes: "",
       });
@@ -120,6 +123,19 @@ export function MarcaFormDialog({
                 setFormData({ ...formData, logo_url: e.target.value })
               }
               placeholder="https://..."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="descricao">Descrição</Label>
+            <Textarea
+              id="descricao"
+              value={formData.descricao}
+              onChange={(e) =>
+                setFormData({ ...formData, descricao: e.target.value })
+              }
+              placeholder="Breve descrição da marca"
+              rows={2}
             />
           </div>
 

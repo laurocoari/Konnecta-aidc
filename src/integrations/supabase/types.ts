@@ -17,6 +17,7 @@ export type Database = {
       brands: {
         Row: {
           created_at: string
+          descricao: string | null
           id: string
           logo_url: string | null
           nome: string
@@ -26,6 +27,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          descricao?: string | null
           id?: string
           logo_url?: string | null
           nome: string
@@ -35,6 +37,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          descricao?: string | null
           id?: string
           logo_url?: string | null
           nome?: string

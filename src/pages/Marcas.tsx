@@ -162,29 +162,46 @@ export default function Marcas() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Logo</TableHead>
                 <TableHead>Nome</TableHead>
+                <TableHead>Descrição</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Observações</TableHead>
                 <TableHead className="w-[100px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">
+                  <TableCell colSpan={5} className="text-center">
                     Carregando...
                   </TableCell>
                 </TableRow>
               ) : filteredMarcas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">
+                  <TableCell colSpan={5} className="text-center">
                     Nenhuma marca encontrada
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredMarcas.map((marca) => (
                   <TableRow key={marca.id}>
+                    <TableCell>
+                      {marca.logo_url ? (
+                        <img
+                          src={marca.logo_url}
+                          alt={marca.nome}
+                          className="h-10 w-10 object-contain rounded"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
+                          N/A
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium">{marca.nome}</TableCell>
+                    <TableCell className="max-w-[300px] text-sm text-muted-foreground">
+                      {marca.descricao || "-"}
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
@@ -195,9 +212,6 @@ export default function Marcas() {
                       >
                         {marca.status === "ativa" ? "Ativa" : "Inativa"}
                       </span>
-                    </TableCell>
-                    <TableCell className="max-w-[300px] truncate">
-                      {marca.observacoes || "-"}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
