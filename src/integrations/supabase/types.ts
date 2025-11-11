@@ -675,7 +675,8 @@ export type Database = {
           descricao: string | null
           ean: string | null
           especificacoes: Json | null
-          estoque: number | null
+          estoque_atual: number | null
+          estoque_minimo: number | null
           fornecedores_vinculados: Json | null
           galeria: Json | null
           icms: number | null
@@ -710,7 +711,8 @@ export type Database = {
           descricao?: string | null
           ean?: string | null
           especificacoes?: Json | null
-          estoque?: number | null
+          estoque_atual?: number | null
+          estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
           icms?: number | null
@@ -745,7 +747,8 @@ export type Database = {
           descricao?: string | null
           ean?: string | null
           especificacoes?: Json | null
-          estoque?: number | null
+          estoque_atual?: number | null
+          estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
           icms?: number | null
