@@ -28,10 +28,12 @@ import {
   Package,
   ArrowUpDown,
   Download,
+  Upload,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ProdutoFormDialog } from "@/components/Produtos/ProdutoFormDialog";
+import { ImportacaoProdutosDialog } from "@/components/Produtos/ImportacaoProdutosDialog";
 
 export default function Produtos() {
   const [products, setProducts] = useState<any[]>([]);
@@ -46,6 +48,7 @@ export default function Produtos() {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [lowStockAlerts, setLowStockAlerts] = useState<any[]>([]);
+  const [openImportDialog, setOpenImportDialog] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -187,6 +190,14 @@ export default function Produtos() {
           <Button variant="outline" className="gap-2">
             <Download className="h-4 w-4" />
             Exportar
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => setOpenImportDialog(true)} 
+            className="gap-2"
+          >
+            <Upload className="h-4 w-4" />
+            Importar CSV
           </Button>
           <Button onClick={() => setOpenDialog(true)} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -420,6 +431,15 @@ export default function Produtos() {
         onOpenChange={setOpenDialog}
         product={editingProduct}
         onClose={handleCloseDialog}
+      />
+
+      <ImportacaoProdutosDialog
+        open={openImportDialog}
+        onOpenChange={setOpenImportDialog}
+        onSuccess={() => {
+          loadProducts();
+          toast.success("Produtos importados com sucesso!");
+        }}
       />
     </div>
   );
