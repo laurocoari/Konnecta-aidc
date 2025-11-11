@@ -347,7 +347,7 @@ export default function PropostaFormDialog({
                 <div>
                   <Label>Selecionar Modelo (Opcional)</Label>
                   <Select
-                    value={formData.modelo_id}
+                    value={formData.modelo_id || undefined}
                     onValueChange={(value) => {
                       setFormData({ ...formData, modelo_id: value });
                       aplicarModelo(value);
@@ -357,7 +357,6 @@ export default function PropostaFormDialog({
                       <SelectValue placeholder="Escolha um modelo pronto ou crie do zero" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhum (criar do zero)</SelectItem>
                       {modelos.map((modelo) => (
                         <SelectItem key={modelo.id} value={modelo.id}>
                           {modelo.nome} ({modelo.tipo})
