@@ -285,48 +285,146 @@ export type Database = {
         }
         Relationships: []
       }
+      product_movements: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          destino: string | null
+          id: string
+          observacao: string | null
+          origem: string | null
+          product_id: string
+          quantidade: number
+          tipo: string
+          valor_unitario: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          destino?: string | null
+          id?: string
+          observacao?: string | null
+          origem?: string | null
+          product_id: string
+          quantidade: number
+          tipo: string
+          valor_unitario?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          destino?: string | null
+          id?: string
+          observacao?: string | null
+          origem?: string | null
+          product_id?: string
+          quantidade?: number
+          tipo?: string
+          valor_unitario?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           categoria: string
+          cfop: string | null
           codigo: string
+          cofins: number | null
           created_at: string
+          cst: string | null
+          custo_medio: number | null
           descricao: string | null
+          ean: string | null
           estoque: number | null
+          fornecedores_vinculados: Json | null
+          galeria: Json | null
+          icms: number | null
           id: string
-          imagem_url: string | null
+          imagem_principal: string | null
+          ipi: number | null
+          localizacao: string | null
+          margem_lucro: number | null
+          ncm: string | null
           nome: string
+          observacoes_fiscais: string | null
+          origem: string | null
+          pis: number | null
           status: string
           tipo: string
+          ultima_compra: string | null
+          unidade: string | null
           updated_at: string
           valor_locacao: number | null
           valor_venda: number | null
         }
         Insert: {
           categoria: string
+          cfop?: string | null
           codigo: string
+          cofins?: number | null
           created_at?: string
+          cst?: string | null
+          custo_medio?: number | null
           descricao?: string | null
+          ean?: string | null
           estoque?: number | null
+          fornecedores_vinculados?: Json | null
+          galeria?: Json | null
+          icms?: number | null
           id?: string
-          imagem_url?: string | null
+          imagem_principal?: string | null
+          ipi?: number | null
+          localizacao?: string | null
+          margem_lucro?: number | null
+          ncm?: string | null
           nome: string
+          observacoes_fiscais?: string | null
+          origem?: string | null
+          pis?: number | null
           status?: string
           tipo: string
+          ultima_compra?: string | null
+          unidade?: string | null
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
         }
         Update: {
           categoria?: string
+          cfop?: string | null
           codigo?: string
+          cofins?: number | null
           created_at?: string
+          cst?: string | null
+          custo_medio?: number | null
           descricao?: string | null
+          ean?: string | null
           estoque?: number | null
+          fornecedores_vinculados?: Json | null
+          galeria?: Json | null
+          icms?: number | null
           id?: string
-          imagem_url?: string | null
+          imagem_principal?: string | null
+          ipi?: number | null
+          localizacao?: string | null
+          margem_lucro?: number | null
+          ncm?: string | null
           nome?: string
+          observacoes_fiscais?: string | null
+          origem?: string | null
+          pis?: number | null
           status?: string
           tipo?: string
+          ultima_compra?: string | null
+          unidade?: string | null
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
@@ -395,6 +493,17 @@ export type Database = {
           is_active: boolean
           partner_id: string
           partner_name: string
+        }[]
+      }
+      check_low_stock: {
+        Args: never
+        Returns: {
+          codigo: string
+          estoque_atual: number
+          estoque_minimo: number
+          nome: string
+          product_id: string
+          status: string
         }[]
       }
       get_user_role: {
