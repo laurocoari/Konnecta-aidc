@@ -56,10 +56,13 @@ export default function CentralParceiro() {
       .from("partners")
       .select("*")
       .eq("user_id", user?.id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Error loading partner:", error);
+      toast.error("Erro ao carregar dados do parceiro");
+    } else if (!data) {
+      toast.error("Você não está cadastrado como parceiro. Entre em contato com o administrador.");
     } else {
       setPartner(data);
     }
@@ -70,7 +73,7 @@ export default function CentralParceiro() {
       .from("partners")
       .select("id")
       .eq("user_id", user?.id)
-      .single();
+      .maybeSingle();
 
     if (partnerData) {
       const { data, error } = await supabase
@@ -118,6 +121,12 @@ export default function CentralParceiro() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (!partner) {
+      toast.error("Você precisa estar cadastrado como parceiro para criar oportunidades");
+      return;
+    }
+    
     setLoading(true);
 
     const formData = new FormData(e.currentTarget);
@@ -206,7 +215,7 @@ export default function CentralParceiro() {
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2">
+            <Button className="gap-2" disabled={!partner}>
               <Plus className="h-4 w-4" />
               Nova Oportunidade
             </Button>
