@@ -47,7 +47,7 @@ export function ProdutoFormDialog({
     imagem_principal: "",
     galeria: [],
     brand_id: "",
-    valor_custo: "",
+    custo_medio: "",
     margem_lucro: "",
     valor_venda: "",
     valor_locacao: "",
@@ -85,7 +85,7 @@ export function ProdutoFormDialog({
         imagem_principal: product.imagem_principal || "",
         galeria: product.galeria || [],
         brand_id: product.brand_id || "",
-        valor_custo: product.valor_custo || "",
+        custo_medio: product.custo_medio || "",
         margem_lucro: product.margem_lucro || "",
         valor_venda: product.valor_venda || "",
         valor_locacao: product.valor_locacao || "",
@@ -118,7 +118,7 @@ export function ProdutoFormDialog({
         imagem_principal: "",
         galeria: [],
         brand_id: "",
-        valor_custo: "",
+        custo_medio: "",
         margem_lucro: "",
         valor_venda: "",
         valor_locacao: "",
@@ -175,8 +175,8 @@ export function ProdutoFormDialog({
     }));
 
     // Auto-calculate valor_venda when custo or margem changes
-    if (field === "valor_custo" || field === "margem_lucro") {
-      const custo = field === "valor_custo" ? parseFloat(value) : parseFloat(formData.valor_custo);
+    if (field === "custo_medio" || field === "margem_lucro") {
+      const custo = field === "custo_medio" ? parseFloat(value) : parseFloat(formData.custo_medio);
       const margem = field === "margem_lucro" ? parseFloat(value) : parseFloat(formData.margem_lucro);
       if (custo && margem) {
         calculateValorVenda(custo, margem);
@@ -290,7 +290,7 @@ export function ProdutoFormDialog({
     try {
       const dataToSave = {
         ...formData,
-        valor_custo: formData.valor_custo ? parseFloat(formData.valor_custo) : null,
+        custo_medio: formData.custo_medio ? parseFloat(formData.custo_medio) : null,
         margem_lucro: formData.margem_lucro ? parseFloat(formData.margem_lucro) : null,
         valor_venda: formData.valor_venda ? parseFloat(formData.valor_venda) : null,
         valor_locacao: formData.valor_locacao ? parseFloat(formData.valor_locacao) : null,
@@ -448,13 +448,13 @@ export function ProdutoFormDialog({
             <TabsContent value="comercial" className="space-y-4 mt-4">
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="valor_custo">Valor de Custo (R$)</Label>
+                  <Label htmlFor="custo_medio">Custo Médio (R$)</Label>
                   <Input
-                    id="valor_custo"
+                    id="custo_medio"
                     type="number"
                     step="0.01"
-                    value={formData.valor_custo}
-                    onChange={(e) => handleChange("valor_custo", e.target.value)}
+                    value={formData.custo_medio}
+                    onChange={(e) => handleChange("custo_medio", e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
