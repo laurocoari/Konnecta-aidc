@@ -7,21 +7,22 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { UserCheck } from "lucide-react";
 
-export default function Auth() {
+export default function AuthParceiro() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate("/dashboard");
+        navigate("/central-parceiro");
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        navigate("/dashboard");
+        navigate("/central-parceiro");
       }
     });
 
@@ -67,7 +68,7 @@ export default function Auth() {
           full_name: fullName,
           role: "revendedor",
         },
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${window.location.origin}/central-parceiro`,
       },
     });
 
@@ -84,8 +85,11 @@ export default function Auth() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/20 via-background to-secondary/20 p-4">
       <Card className="glass-strong w-full max-w-md p-8">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-primary">Konnecta CRM</h1>
-          <p className="text-sm text-muted-foreground">Sistema Administrativo</p>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <UserCheck className="h-8 w-8 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold text-primary">Central do Parceiro</h1>
+          <p className="text-sm text-muted-foreground">Portal exclusivo para revendedores Konnecta</p>
         </div>
 
         <Tabs defaultValue="login" className="w-full">
@@ -155,7 +159,7 @@ export default function Auth() {
                 />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Criando conta..." : "Criar Conta"}
+                {loading ? "Criando conta..." : "Criar Conta de Parceiro"}
               </Button>
             </form>
           </TabsContent>

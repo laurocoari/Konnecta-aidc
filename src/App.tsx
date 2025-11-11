@@ -17,9 +17,11 @@ import Contratos from "./pages/Contratos";
 import Financeiro from "./pages/Financeiro";
 import Configuracoes from "./pages/Configuracoes";
 import Auth from "./pages/Auth";
+import AuthParceiro from "./pages/AuthParceiro";
 import CentralParceiro from "./pages/CentralParceiro";
 import GerenciarOportunidades from "./pages/GerenciarOportunidades";
 import NotFound from "./pages/NotFound";
+import Index from "./pages/Index";
 
 const queryClient = new QueryClient();
 
@@ -30,7 +32,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/auth/parceiro" element={<AuthParceiro />} />
           <Route
             path="/*"
             element={
@@ -41,7 +45,7 @@ const App = () => (
                     <Header />
                     <main className="ml-64 mt-16 flex-1 p-6">
                       <Routes>
-                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/clientes" element={<Clientes />} />
                         <Route path="/funil" element={<Funil />} />
                         <Route path="/produtos" element={<Produtos />} />

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
 const adminNavigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "comercial", "financeiro"] },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "comercial", "financeiro"] },
   { name: "Clientes", href: "/clientes", icon: Users, roles: ["admin", "comercial"] },
   { name: "Funil de Vendas", href: "/funil", icon: TrendingUp, roles: ["admin", "comercial"] },
   { name: "Produtos", href: "/produtos", icon: Package, roles: ["admin", "comercial"] },
@@ -51,7 +51,7 @@ export function Sidebar() {
           <NavLink
             key={item.name}
             to={item.href}
-            end={item.href === "/" || item.href === "/central-parceiro"}
+            end={item.href === "/dashboard" || item.href === "/central-parceiro"}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
