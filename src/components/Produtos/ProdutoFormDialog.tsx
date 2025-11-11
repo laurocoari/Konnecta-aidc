@@ -288,10 +288,9 @@ export function ProdutoFormDialog({
                   <Label htmlFor="brand_id">Marca</Label>
                   <Select value={formData.brand_id} onValueChange={(value) => handleChange("brand_id", value)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecione a marca" />
+                      <SelectValue placeholder="Selecione a marca (opcional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
                       {brands.map((brand) => (
                         <SelectItem key={brand.id} value={brand.id}>
                           {brand.nome}
