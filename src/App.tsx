@@ -12,6 +12,7 @@ import Funil from "./pages/Funil";
 import Produtos from "./pages/Produtos";
 import Propostas from "./pages/Propostas";
 import ModelosPropostas from "./pages/ModelosPropostas";
+import PropostaPublica from "./pages/PropostaPublica";
 import Fornecedores from "./pages/Fornecedores";
 import Revendedores from "./pages/Revendedores";
 import Contratos from "./pages/Contratos";
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/parceiro" element={<AuthParceiro />} />
+          <Route path="/proposta/:codigo" element={<PropostaPublica />} />
           <Route
             path="/*"
             element={

@@ -574,6 +574,7 @@ export type Database = {
       }
       proposals: {
         Row: {
+          aprovado_em: string | null
           cliente_id: string
           codigo: string
           condicoes_comerciais: Json | null
@@ -583,12 +584,14 @@ export type Database = {
           despesas_adicionais: number | null
           id: string
           introducao: string | null
+          link_publico: string | null
           modelo_id: string | null
           motivo_revisao: string | null
           observacoes_internas: string | null
           oportunidade_id: string | null
           pdf_url: string | null
           status: string
+          token_publico: string | null
           total_geral: number
           total_itens: number
           updated_at: string
@@ -597,6 +600,7 @@ export type Database = {
           versao: number
         }
         Insert: {
+          aprovado_em?: string | null
           cliente_id: string
           codigo: string
           condicoes_comerciais?: Json | null
@@ -606,12 +610,14 @@ export type Database = {
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
+          link_publico?: string | null
           modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
           pdf_url?: string | null
           status?: string
+          token_publico?: string | null
           total_geral?: number
           total_itens?: number
           updated_at?: string
@@ -620,6 +626,7 @@ export type Database = {
           versao?: number
         }
         Update: {
+          aprovado_em?: string | null
           cliente_id?: string
           codigo?: string
           condicoes_comerciais?: Json | null
@@ -629,12 +636,14 @@ export type Database = {
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
+          link_publico?: string | null
           modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
           pdf_url?: string | null
           status?: string
+          token_publico?: string | null
           total_geral?: number
           total_itens?: number
           updated_at?: string
@@ -714,6 +723,7 @@ export type Database = {
           status: string
         }[]
       }
+      generate_proposal_token: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]

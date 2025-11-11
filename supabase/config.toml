@@ -1,1 +1,4 @@
 project_id = "sirbywubugzbphxgjoob"
+
+[functions.generate-proposal-pdf]
+verify_jwt = false

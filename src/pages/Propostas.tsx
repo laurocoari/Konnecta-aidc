@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import PropostaFormDialog from "@/components/Propostas/PropostaFormDialog";
 import NovaVersaoDialog from "@/components/Propostas/NovaVersaoDialog";
 import HistoricoVersoesDialog from "@/components/Propostas/HistoricoVersoesDialog";
+import { PropostaPreviewDialog } from "@/components/Propostas/PropostaPreviewDialog";
 
 const statusColors = {
   rascunho: "secondary",
@@ -51,7 +52,10 @@ export default function Propostas() {
   const [selectedProposta, setSelectedProposta] = useState<any>(null);
   const [novaVersaoDialogOpen, setNovaVersaoDialogOpen] = useState(false);
   const [historicoDialogOpen, setHistoricoDialogOpen] = useState(false);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedCodigo, setSelectedCodigo] = useState("");
+  const [selectedProposalId, setSelectedProposalId] = useState("");
+  const [selectedVersao, setSelectedVersao] = useState(1);
 
   useEffect(() => {
     loadPropostas();
@@ -90,6 +94,13 @@ export default function Propostas() {
   const handleHistorico = (codigo: string) => {
     setSelectedCodigo(codigo);
     setHistoricoDialogOpen(true);
+  };
+
+  const handlePreview = (proposta: any) => {
+    setSelectedProposalId(proposta.id);
+    setSelectedCodigo(proposta.codigo);
+    setSelectedVersao(proposta.versao);
+    setPreviewDialogOpen(true);
   };
 
   const handleFormSuccess = () => {
@@ -250,6 +261,14 @@ export default function Propostas() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => handlePreview(proposta)}
+                        title="Visualizar/Gerar PDF"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleEdit(proposta)}
                         title="Editar"
                       >
@@ -304,6 +323,14 @@ export default function Propostas() {
         open={historicoDialogOpen}
         onOpenChange={setHistoricoDialogOpen}
         codigo={selectedCodigo}
+      />
+
+      <PropostaPreviewDialog
+        open={previewDialogOpen}
+        onOpenChange={setPreviewDialogOpen}
+        proposalId={selectedProposalId}
+        codigo={selectedCodigo}
+        versao={selectedVersao}
       />
     </div>
   );
