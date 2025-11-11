@@ -29,11 +29,13 @@ import {
   ArrowUpDown,
   Download,
   Upload,
+  Zap,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ProdutoFormDialog } from "@/components/Produtos/ProdutoFormDialog";
 import { ImportacaoProdutosDialog } from "@/components/Produtos/ImportacaoProdutosDialog";
+import { importUrovoProducts } from "@/utils/importUrovoProducts";
 
 export default function Produtos() {
   const [products, setProducts] = useState<any[]>([]);
@@ -49,6 +51,7 @@ export default function Produtos() {
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [lowStockAlerts, setLowStockAlerts] = useState<any[]>([]);
   const [openImportDialog, setOpenImportDialog] = useState(false);
+  const [importingUrovo, setImportingUrovo] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -166,6 +169,31 @@ export default function Produtos() {
     checkLowStock();
   };
 
+  const handleImportUrovoProducts = async () => {
+    if (!confirm("Deseja importar os produtos Urovo? Esta operação pode demorar alguns minutos.")) {
+      return;
+    }
+
+    setImportingUrovo(true);
+    toast.info("Iniciando importação de produtos Urovo...");
+
+    try {
+      const result = await importUrovoProducts();
+      await loadProducts();
+      await checkLowStock();
+      
+      if (result.errors.length > 0) {
+        toast.warning(`Importação concluída com alguns erros. Verifique o console para detalhes.`);
+      } else {
+        toast.success(`${result.successCount} produtos Urovo importados com sucesso!`);
+      }
+    } catch (error: any) {
+      toast.error(`Erro na importação: ${error.message}`);
+    } finally {
+      setImportingUrovo(false);
+    }
+  };
+
   const getStockStatus = (product: any) => {
     if (product.estoque_atual === 0) {
       return { label: "Em Falta", variant: "destructive" as const };
@@ -198,6 +226,15 @@ export default function Produtos() {
           >
             <Upload className="h-4 w-4" />
             Importar CSV
+          </Button>
+          <Button 
+            variant="secondary" 
+            onClick={handleImportUrovoProducts} 
+            className="gap-2"
+            disabled={importingUrovo}
+          >
+            <Zap className="h-4 w-4" />
+            {importingUrovo ? "Importando..." : "Importar Urovo"}
           </Button>
           <Button onClick={() => setOpenDialog(true)} className="gap-2">
             <Plus className="h-4 w-4" />
