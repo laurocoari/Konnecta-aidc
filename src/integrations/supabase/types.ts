@@ -101,6 +101,303 @@ export type Database = {
           },
         ]
       }
+      contract_attachments: {
+        Row: {
+          contract_id: string
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+          ordem: number | null
+          tipo: string
+          url: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          ordem?: number | null
+          tipo: string
+          url: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          ordem?: number | null
+          tipo?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_attachments_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_items: {
+        Row: {
+          codigo: string | null
+          contract_id: string
+          created_at: string
+          descricao: string
+          id: string
+          numero_serie: string | null
+          observacoes: string | null
+          product_id: string | null
+          quantidade: number
+          valor_total: number
+          valor_unitario: number
+        }
+        Insert: {
+          codigo?: string | null
+          contract_id: string
+          created_at?: string
+          descricao: string
+          id?: string
+          numero_serie?: string | null
+          observacoes?: string | null
+          product_id?: string | null
+          quantidade: number
+          valor_total: number
+          valor_unitario: number
+        }
+        Update: {
+          codigo?: string | null
+          contract_id?: string
+          created_at?: string
+          descricao?: string
+          id?: string
+          numero_serie?: string | null
+          observacoes?: string | null
+          product_id?: string | null
+          quantidade?: number
+          valor_total?: number
+          valor_unitario?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_items_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_signers: {
+        Row: {
+          assinatura_data: string | null
+          assinatura_tipo: string | null
+          assinatura_url: string | null
+          cargo: string | null
+          contract_id: string
+          cpf_rg: string | null
+          created_at: string
+          email: string | null
+          id: string
+          nome: string
+          tipo: Database["public"]["Enums"]["signer_type"]
+        }
+        Insert: {
+          assinatura_data?: string | null
+          assinatura_tipo?: string | null
+          assinatura_url?: string | null
+          cargo?: string | null
+          contract_id: string
+          cpf_rg?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          nome: string
+          tipo: Database["public"]["Enums"]["signer_type"]
+        }
+        Update: {
+          assinatura_data?: string | null
+          assinatura_tipo?: string | null
+          assinatura_url?: string | null
+          cargo?: string | null
+          contract_id?: string
+          cpf_rg?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          nome?: string
+          tipo?: Database["public"]["Enums"]["signer_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_signers_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_templates: {
+        Row: {
+          cabecalho_html: string | null
+          corpo_html: string
+          created_at: string
+          created_by: string
+          id: string
+          nome: string
+          observacoes_internas: string | null
+          rodape_html: string | null
+          status: string
+          tipo: Database["public"]["Enums"]["contract_type"]
+          updated_at: string
+          variaveis_disponiveis: Json | null
+        }
+        Insert: {
+          cabecalho_html?: string | null
+          corpo_html: string
+          created_at?: string
+          created_by: string
+          id?: string
+          nome: string
+          observacoes_internas?: string | null
+          rodape_html?: string | null
+          status?: string
+          tipo: Database["public"]["Enums"]["contract_type"]
+          updated_at?: string
+          variaveis_disponiveis?: Json | null
+        }
+        Update: {
+          cabecalho_html?: string | null
+          corpo_html?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          nome?: string
+          observacoes_internas?: string | null
+          rodape_html?: string | null
+          status?: string
+          tipo?: Database["public"]["Enums"]["contract_type"]
+          updated_at?: string
+          variaveis_disponiveis?: Json | null
+        }
+        Relationships: []
+      }
+      contracts: {
+        Row: {
+          cliente_id: string
+          condicoes_comerciais: Json | null
+          created_at: string
+          created_by: string
+          data_fim: string | null
+          data_inicio: string
+          id: string
+          link_publico: string | null
+          modelo_id: string | null
+          motivo_revisao: string | null
+          numero: string
+          observacoes: string | null
+          oportunidade_id: string | null
+          pdf_url: string | null
+          proposta_id: string | null
+          status: Database["public"]["Enums"]["contract_status"]
+          tipo: Database["public"]["Enums"]["contract_type"]
+          token_publico: string | null
+          updated_at: string
+          valor_mensal: number | null
+          valor_total: number
+          versao: number
+        }
+        Insert: {
+          cliente_id: string
+          condicoes_comerciais?: Json | null
+          created_at?: string
+          created_by: string
+          data_fim?: string | null
+          data_inicio: string
+          id?: string
+          link_publico?: string | null
+          modelo_id?: string | null
+          motivo_revisao?: string | null
+          numero: string
+          observacoes?: string | null
+          oportunidade_id?: string | null
+          pdf_url?: string | null
+          proposta_id?: string | null
+          status?: Database["public"]["Enums"]["contract_status"]
+          tipo: Database["public"]["Enums"]["contract_type"]
+          token_publico?: string | null
+          updated_at?: string
+          valor_mensal?: number | null
+          valor_total: number
+          versao?: number
+        }
+        Update: {
+          cliente_id?: string
+          condicoes_comerciais?: Json | null
+          created_at?: string
+          created_by?: string
+          data_fim?: string | null
+          data_inicio?: string
+          id?: string
+          link_publico?: string | null
+          modelo_id?: string | null
+          motivo_revisao?: string | null
+          numero?: string
+          observacoes?: string | null
+          oportunidade_id?: string | null
+          pdf_url?: string | null
+          proposta_id?: string | null
+          status?: Database["public"]["Enums"]["contract_status"]
+          tipo?: Database["public"]["Enums"]["contract_type"]
+          token_publico?: string | null
+          updated_at?: string
+          valor_mensal?: number | null
+          valor_total?: number
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_modelo_id_fkey"
+            columns: ["modelo_id"]
+            isOneToOne: false
+            referencedRelation: "contract_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_oportunidade_id_fkey"
+            columns: ["oportunidade_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_proposta_id_fkey"
+            columns: ["proposta_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           anexos: Json | null
@@ -723,6 +1020,7 @@ export type Database = {
           status: string
         }[]
       }
+      generate_contract_number: { Args: never; Returns: string }
       generate_proposal_token: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
@@ -737,6 +1035,15 @@ export type Database = {
       }
     }
     Enums: {
+      contract_status:
+        | "rascunho"
+        | "em_analise"
+        | "aprovado"
+        | "assinado"
+        | "ativo"
+        | "encerrado"
+        | "rescindido"
+      contract_type: "locacao" | "venda" | "comodato" | "servico"
       exclusivity_status: "ativa" | "expirada" | "suspensa"
       opportunity_status:
         | "em_analise"
@@ -745,6 +1052,7 @@ export type Database = {
         | "convertida"
         | "perdida"
         | "devolvida"
+      signer_type: "locador" | "locatario" | "testemunha"
       user_role: "admin" | "comercial" | "revendedor" | "financeiro"
     }
     CompositeTypes: {
@@ -873,6 +1181,16 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      contract_status: [
+        "rascunho",
+        "em_analise",
+        "aprovado",
+        "assinado",
+        "ativo",
+        "encerrado",
+        "rescindido",
+      ],
+      contract_type: ["locacao", "venda", "comodato", "servico"],
       exclusivity_status: ["ativa", "expirada", "suspensa"],
       opportunity_status: [
         "em_analise",
@@ -882,6 +1200,7 @@ export const Constants = {
         "perdida",
         "devolvida",
       ],
+      signer_type: ["locador", "locatario", "testemunha"],
       user_role: ["admin", "comercial", "revendedor", "financeiro"],
     },
   },

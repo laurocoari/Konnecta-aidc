@@ -13,6 +13,7 @@ import Produtos from "./pages/Produtos";
 import Propostas from "./pages/Propostas";
 import ModelosPropostas from "./pages/ModelosPropostas";
 import PropostaPublica from "./pages/PropostaPublica";
+import ModelosContratos from "./pages/ModelosContratos";
 import Fornecedores from "./pages/Fornecedores";
 import Revendedores from "./pages/Revendedores";
 import Contratos from "./pages/Contratos";
@@ -53,8 +54,9 @@ const App = () => (
                         <Route path="/funil" element={<Funil />} />
                         <Route path="/produtos" element={<Produtos />} />
                         <Route path="/propostas" element={<Propostas />} />
-                        <Route path="/modelos-propostas" element={<ModelosPropostas />} />
-                        <Route path="/contratos" element={<Contratos />} />
+                         <Route path="/modelos-propostas" element={<ModelosPropostas />} />
+                         <Route path="/modelos-contratos" element={<ModelosContratos />} />
+                         <Route path="/contratos" element={<Contratos />} />
                         <Route path="/fornecedores" element={<Fornecedores />} />
                         <Route path="/revendedores" element={<Revendedores />} />
                         <Route path="/financeiro" element={<Financeiro />} />
