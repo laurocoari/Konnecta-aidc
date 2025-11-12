@@ -174,26 +174,32 @@ function parseCSVWithMultiline(csvText: string): string[][] {
 
 
 async function createProduct(rowData: ProductImportData) {
-  // Processar marca
+  // Processar marca - validar que não seja descrição ou texto longo
   let brandId = null;
-  if (rowData.marca) {
+  if (rowData.marca && rowData.marca.length < 50 && !rowData.marca.includes(',') && !rowData.marca.includes('.')) {
+    const marcaNome = rowData.marca.trim();
+    
     const { data: existingBrand } = await supabase
       .from('brands')
       .select('id')
-      .eq('nome', rowData.marca)
+      .ilike('nome', marcaNome)
       .single();
 
     if (existingBrand) {
       brandId = existingBrand.id;
     } else {
-      const { data: newBrand, error: brandError } = await supabase
-        .from('brands')
-        .insert({ nome: rowData.marca, status: 'ativa' })
-        .select('id')
-        .single();
+      // Criar marca apenas se for um nome válido
+      if (marcaNome && marcaNome.length > 0) {
+        const { data: newBrand, error: brandError } = await supabase
+          .from('brands')
+          .insert({ nome: marcaNome, status: 'ativa' })
+          .select('id')
+          .single();
 
-      if (brandError) throw brandError;
-      brandId = newBrand.id;
+        if (!brandError && newBrand) {
+          brandId = newBrand.id;
+        }
+      }
     }
   }
 
@@ -205,7 +211,7 @@ async function createProduct(rowData: ProductImportData) {
     ? rowData.galeria_imagens
         .split('|')
         .map(url => url.trim())
-        .filter(url => url)
+        .filter(url => url && url.startsWith('http'))
         .map(url => ({ url }))
     : [];
 
@@ -214,7 +220,7 @@ async function createProduct(rowData: ProductImportData) {
     ? rowData.videos_youtube
         .split('|')
         .map(url => url.trim())
-        .filter(url => url)
+        .filter(url => url && url.startsWith('http'))
         .map(url => ({ url, type: 'youtube' }))
     : [];
 
@@ -264,9 +270,6 @@ async function createProduct(rowData: ProductImportData) {
     status: rowData.status || 'ativo',
   };
 
-  console.log(`📸 Imagem principal: ${imagemPrincipal || 'nenhuma'}`);
-  console.log(`🖼️ Galeria: ${galeria.length} imagens`);
-
   const { error } = await supabase
     .from('products')
     .insert(productData);
@@ -275,26 +278,32 @@ async function createProduct(rowData: ProductImportData) {
 }
 
 async function updateProduct(productId: string, rowData: ProductImportData) {
-  // Processar marca
+  // Processar marca - validar que não seja descrição ou texto longo
   let brandId = null;
-  if (rowData.marca) {
+  if (rowData.marca && rowData.marca.length < 50 && !rowData.marca.includes(',') && !rowData.marca.includes('.')) {
+    const marcaNome = rowData.marca.trim();
+    
     const { data: existingBrand } = await supabase
       .from('brands')
       .select('id')
-      .eq('nome', rowData.marca)
+      .ilike('nome', marcaNome)
       .single();
 
     if (existingBrand) {
       brandId = existingBrand.id;
     } else {
-      const { data: newBrand, error: brandError } = await supabase
-        .from('brands')
-        .insert({ nome: rowData.marca, status: 'ativa' })
-        .select('id')
-        .single();
+      // Criar marca apenas se for um nome válido
+      if (marcaNome && marcaNome.length > 0) {
+        const { data: newBrand, error: brandError } = await supabase
+          .from('brands')
+          .insert({ nome: marcaNome, status: 'ativa' })
+          .select('id')
+          .single();
 
-      if (brandError) throw brandError;
-      brandId = newBrand.id;
+        if (!brandError && newBrand) {
+          brandId = newBrand.id;
+        }
+      }
     }
   }
 
@@ -306,7 +315,7 @@ async function updateProduct(productId: string, rowData: ProductImportData) {
     ? rowData.galeria_imagens
         .split('|')
         .map(url => url.trim())
-        .filter(url => url)
+        .filter(url => url && url.startsWith('http'))
         .map(url => ({ url }))
     : [];
 
@@ -315,7 +324,7 @@ async function updateProduct(productId: string, rowData: ProductImportData) {
     ? rowData.videos_youtube
         .split('|')
         .map(url => url.trim())
-        .filter(url => url)
+        .filter(url => url && url.startsWith('http'))
         .map(url => ({ url, type: 'youtube' }))
     : [];
 
@@ -363,9 +372,6 @@ async function updateProduct(productId: string, rowData: ProductImportData) {
     especificacoes: especificacoes.length > 0 ? especificacoes : null,
     status: rowData.status || 'ativo',
   };
-
-  console.log(`📸 Imagem principal: ${imagemPrincipal || 'nenhuma'}`);
-  console.log(`🖼️ Galeria: ${galeria.length} imagens`);
 
   const { error } = await supabase
     .from('products')
