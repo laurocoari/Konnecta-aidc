@@ -83,14 +83,54 @@ export default function Propostas() {
         .from("proposals")
         .select(`
           *,
-          cliente:clients(nome, cnpj)
+          cliente:clients(
+            id,
+            nome,
+            cnpj,
+            email,
+            telefone,
+            cidade,
+            estado
+          ),
+          modelo:proposal_templates(
+            id,
+            nome,
+            tipo
+          ),
+          oportunidade:opportunities(
+            id,
+            product_name,
+            tipo_oportunidade,
+            valor_estimado
+          )
         `)
         .order("created_at", { ascending: false });
+      
+      // Carregar dados do vendedor separadamente
+      if (data) {
+        const vendedorIds = [...new Set(data.map(p => p.vendedor_id).filter(Boolean))];
+        if (vendedorIds.length > 0) {
+          const { data: vendedoresData } = await supabase
+            .from("profiles")
+            .select("id, full_name, role")
+            .in("id", vendedorIds);
+          
+          if (vendedoresData) {
+            const vendedoresMap = new Map(vendedoresData.map(v => [v.id, v]));
+            data.forEach(proposta => {
+              if (proposta.vendedor_id && vendedoresMap.has(proposta.vendedor_id)) {
+                proposta.vendedor = vendedoresMap.get(proposta.vendedor_id);
+              }
+            });
+          }
+        }
+      }
 
       if (error) throw error;
       setPropostas(data || []);
     } catch (error: any) {
-      toast.error("Erro ao carregar propostas");
+      console.error("Erro ao carregar propostas:", error);
+      toast.error("Erro ao carregar propostas: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -263,7 +303,16 @@ export default function Propostas() {
                       {tipoOperacaoLabels[proposta.tipo_operacao as keyof typeof tipoOperacaoLabels] || "N/A"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{proposta.cliente?.nome}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{proposta.cliente?.nome || "N/A"}</span>
+                      {proposta.cliente?.cnpj && (
+                        <span className="text-xs text-muted-foreground">
+                          CNPJ: {proposta.cliente.cnpj}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 font-semibold text-success">
                       <DollarSign className="h-4 w-4" />

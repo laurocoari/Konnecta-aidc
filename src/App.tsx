@@ -25,10 +25,25 @@ import CentralParceiro from "./pages/CentralParceiro";
 import GerenciarOportunidades from "./pages/GerenciarOportunidades";
 import NotFound from "./pages/NotFound";
 import Index from "./pages/Index";
+import { logger } from "@/lib/logger";
+import { useEffect } from "react";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
-const App = () => (
+const App = () => {
+  useEffect(() => {
+    logger.info("APP", "Aplicação React inicializada");
+    logger.info("APP", `Modo: ${import.meta.env.MODE}`);
+  }, []);
+
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -75,6 +90,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;

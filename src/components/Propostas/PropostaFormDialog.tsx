@@ -8,13 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2, Search, Calculator } from "lucide-react";
+import { Plus, Trash2, Search, Calculator, Building2, Mail, Phone, MapPin, User } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import SimuladorROI from "@/components/Financeiro/SimuladorROI";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TipoOperacaoSelector } from "./TipoOperacaoSelector";
 import { FinancialSummaryPanel } from "./FinancialSummaryPanel";
-import { useProposalCalculations, calcularCustoLocacaoDireta, calcularValorComMargem } from "@/hooks/useProposalCalculations";
+import { calcularCustoLocacaoDireta, calcularValorComMargem } from "@/hooks/useProposalCalculations";
+import { logger } from "@/lib/logger";
 
 interface PropostaFormDialogProps {
   open: boolean;
@@ -55,12 +57,15 @@ export default function PropostaFormDialog({
   const [produtos, setProdutos] = useState<any[]>([]);
   const [fornecedores, setFornecedores] = useState<any[]>([]);
   const [modelos, setModelos] = useState<any[]>([]);
+  const [oportunidades, setOportunidades] = useState<any[]>([]);
   const [searchProduto, setSearchProduto] = useState("");
   const [items, setItems] = useState<ProposalItem[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     modelo_id: "",
     cliente_id: "",
+    oportunidade_id: "",
     tipo_operacao: "venda_direta" as 'venda_direta' | 'venda_agenciada' | 'locacao_direta' | 'locacao_agenciada',
     data_proposta: new Date().toISOString().split('T')[0],
     validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -80,69 +85,222 @@ export default function PropostaFormDialog({
 
   useEffect(() => {
     if (open) {
+      logger.ui("Abrindo formulário de proposta - carregando dados do banco");
       loadClientes();
       loadProdutos();
       loadFornecedores();
       loadModelos();
       if (proposta) {
+        logger.ui(`Carregando dados da proposta existente: ${proposta.codigo || proposta.id}`);
         loadPropostaData();
+      } else {
+        // Resetar formulário para nova proposta
+        setFormData({
+          modelo_id: "",
+          cliente_id: "",
+          oportunidade_id: "",
+          tipo_operacao: "venda_direta",
+          data_proposta: new Date().toISOString().split('T')[0],
+          validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          introducao: "Prezados, segue proposta comercial conforme especificações abaixo.",
+          observacoes_internas: "",
+          desconto_total: 0,
+          despesas_adicionais: 0,
+          status: "rascunho",
+          condicoes_comerciais: {
+            tipo: "nenhuma",
+            parcelas: 1,
+            forma_pagamento: "",
+            prazo_entrega: "",
+            garantia: "",
+          },
+        });
+        setItems([]);
+        setSelectedCliente(null);
+        setOportunidades([]);
       }
     }
   }, [open, proposta]);
 
-  const loadClientes = async () => {
-    const { data, error } = await supabase
-      .from("clients")
-      .select("*")
-      .order("nome");
-    
-    if (error) {
-      toast.error("Erro ao carregar clientes");
-      return;
+  // Carregar oportunidades quando cliente for selecionado
+  useEffect(() => {
+    if (formData.cliente_id) {
+      loadOportunidades(formData.cliente_id);
+      // Buscar dados completos do cliente selecionado
+      const cliente = clientes.find(c => c.id === formData.cliente_id);
+      setSelectedCliente(cliente || null);
+    } else {
+      setOportunidades([]);
+      setSelectedCliente(null);
     }
-    setClientes(data || []);
+  }, [formData.cliente_id, clientes]);
+
+  const loadClientes = async () => {
+    try {
+      logger.db("Carregando clientes do banco de dados");
+      
+      // Verificar autenticação primeiro
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        logger.error("AUTH", "Usuário não autenticado", authError);
+        toast.error("Usuário não autenticado. Faça login novamente.");
+        return;
+      }
+      
+      logger.db(`Usuário autenticado: ${user.email} (${user.id})`);
+      
+      const { data, error } = await supabase
+        .from("clients")
+        .select(`
+          *,
+          origin_partner:partners!clients_origin_partner_id_fkey(
+            id,
+            nome_fantasia,
+            razao_social
+          ),
+          exclusive_partner:partners!clients_exclusive_partner_id_fkey(
+            id,
+            nome_fantasia,
+            razao_social
+          )
+        `)
+        .order("nome");
+      
+      if (error) {
+        logger.error("DB", "Erro ao carregar clientes", error);
+        
+        // Mensagem mais específica baseada no erro
+        if (error.code === 'PGRST116' || error.message.includes('permission denied') || error.message.includes('row-level security')) {
+          toast.error("Sem permissão para visualizar clientes. Verifique seu perfil de acesso.");
+          logger.warn("DB", "Possível problema de RLS - usuário pode não ter role adequado");
+        } else {
+          toast.error("Erro ao carregar clientes: " + error.message);
+        }
+        return;
+      }
+      
+      logger.db(`✅ ${data?.length || 0} clientes carregados`);
+      
+      if (!data || data.length === 0) {
+        logger.warn("DB", "Nenhum cliente encontrado na tabela");
+        toast.info("Nenhum cliente cadastrado ainda. Cadastre clientes primeiro.");
+      }
+      
+      setClientes(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar clientes", error);
+      toast.error("Erro ao carregar clientes: " + (error.message || "Erro desconhecido"));
+    }
   };
 
   const loadProdutos = async () => {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("status", "ativo")
-      .order("nome");
-    
-    if (error) {
+    try {
+      logger.db("Carregando produtos ativos do banco de dados");
+      const { data, error } = await supabase
+        .from("products")
+        .select(`
+          *,
+          brand:brands(
+            id,
+            nome,
+            logo_url
+          )
+        `)
+        .eq("status", "ativo")
+        .order("nome");
+      
+      if (error) {
+        logger.error("DB", "Erro ao carregar produtos", error);
+        toast.error("Erro ao carregar produtos: " + error.message);
+        return;
+      }
+      
+      logger.db(`✅ ${data?.length || 0} produtos ativos carregados`);
+      setProdutos(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar produtos", error);
       toast.error("Erro ao carregar produtos");
-      return;
     }
-    setProdutos(data || []);
   };
 
   const loadFornecedores = async () => {
-    const { data, error } = await supabase
-      .from("suppliers")
-      .select("*")
-      .eq("status", "ativo")
-      .order("nome");
-    
-    if (error) {
+    try {
+      logger.db("Carregando fornecedores ativos do banco de dados");
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("*")
+        .eq("status", "ativo")
+        .order("nome");
+      
+      if (error) {
+        logger.error("DB", "Erro ao carregar fornecedores", error);
+        toast.error("Erro ao carregar fornecedores: " + error.message);
+        return;
+      }
+      
+      logger.db(`✅ ${data?.length || 0} fornecedores ativos carregados`);
+      setFornecedores(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar fornecedores", error);
       toast.error("Erro ao carregar fornecedores");
-      return;
     }
-    setFornecedores(data || []);
   };
 
   const loadModelos = async () => {
-    const { data, error } = await supabase
-      .from("proposal_templates")
-      .select("*")
-      .eq("status", "ativo")
-      .order("nome");
-    
-    if (error) {
+    try {
+      logger.db("Carregando modelos de proposta ativos do banco de dados");
+      const { data, error } = await supabase
+        .from("proposal_templates")
+        .select("*")
+        .eq("status", "ativo")
+        .order("nome");
+
+      if (error) {
+        logger.error("DB", "Erro ao carregar modelos", error);
+        toast.error("Erro ao carregar modelos: " + error.message);
+        return;
+      }
+      
+      logger.db(`✅ ${data?.length || 0} modelos ativos carregados`);
+      setModelos(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar modelos", error);
       toast.error("Erro ao carregar modelos");
-      return;
     }
-    setModelos(data || []);
+  };
+
+  const loadOportunidades = async (clienteId: string) => {
+    try {
+      logger.db(`Carregando oportunidades do cliente: ${clienteId}`);
+      const { data, error } = await supabase
+        .from("opportunities")
+        .select(`
+          *,
+          client:clients(
+            id,
+            nome,
+            cnpj
+          ),
+          partner:partners(
+            id,
+            nome_fantasia,
+            razao_social
+          )
+        `)
+        .eq("client_id", clienteId)
+        .in("status", ["em_analise", "aprovada", "em_negociacao"])
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        logger.error("DB", "Erro ao carregar oportunidades", error);
+        return;
+      }
+      
+      logger.db(`✅ ${data?.length || 0} oportunidades carregadas para o cliente`);
+      setOportunidades(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar oportunidades", error);
+    }
   };
 
   const aplicarModelo = (modeloId: string) => {
@@ -165,41 +323,141 @@ export default function PropostaFormDialog({
   };
 
   const loadPropostaData = async () => {
-    if (!proposta?.id) return;
-
-    const { data: itemsData, error } = await supabase
-      .from("proposal_items")
-      .select("*")
-      .eq("proposal_id", proposta.id);
-
-    if (error) {
-      toast.error("Erro ao carregar itens da proposta");
+    if (!proposta?.id) {
+      logger.warn("UI", "Tentativa de carregar proposta sem ID");
       return;
     }
 
-    setItems(itemsData || []);
-    setFormData({
-      modelo_id: proposta.modelo_id || "",
-      cliente_id: proposta.cliente_id,
-      tipo_operacao: proposta.tipo_operacao || "venda_direta",
-      data_proposta: proposta.data_proposta,
-      validade: proposta.validade,
-      introducao: proposta.introducao,
-      observacoes_internas: proposta.observacoes_internas || "",
-      desconto_total: proposta.desconto_total || 0,
-      despesas_adicionais: proposta.despesas_adicionais || 0,
-      status: proposta.status,
-      condicoes_comerciais: proposta.condicoes_comerciais || {
-        tipo: "nenhuma",
-        parcelas: 1,
-        forma_pagamento: "",
-        prazo_entrega: "",
-        garantia: "",
-      },
-    });
+    try {
+      logger.db(`Carregando proposta completa: ${proposta.id}`);
+      
+      // Carregar proposta completa com relacionamentos
+      const { data: propostaData, error: propostaError } = await supabase
+        .from("proposals")
+        .select(`
+          *,
+          cliente:clients(*),
+          modelo:proposal_templates(*),
+          oportunidade:opportunities(*)
+        `)
+        .eq("id", proposta.id)
+        .single();
+
+      if (propostaError) {
+        logger.error("DB", "Erro ao carregar proposta", propostaError);
+        throw propostaError;
+      }
+
+      logger.db(`✅ Proposta carregada: ${propostaData?.codigo || propostaData?.id}`);
+      logger.db(`Cliente: ${propostaData?.cliente?.nome || 'N/A'}`);
+      logger.db(`Modelo: ${propostaData?.modelo?.nome || 'N/A'}`);
+
+      // Carregar itens com produtos e fornecedores relacionados
+      logger.db("Carregando itens da proposta com relacionamentos");
+      const { data: itemsData, error: itemsError } = await supabase
+        .from("proposal_items")
+        .select(`
+          *,
+          product:products(
+            id,
+            codigo,
+            nome,
+            descricao,
+            categoria,
+            tipo,
+            imagem_principal,
+            valor_venda,
+            valor_locacao,
+            custo_medio,
+            estoque_atual,
+            tipo_disponibilidade,
+            vida_util_meses,
+            margem_lucro_venda,
+            comissao_agenciamento_padrao,
+            brand:brands(id, nome, logo_url)
+          ),
+          fornecedor:suppliers(
+            id,
+            nome,
+            cnpj,
+            email,
+            telefone
+          )
+        `)
+        .eq("proposal_id", proposta.id)
+        .order("created_at", { ascending: true });
+
+      if (itemsError) {
+        logger.error("DB", "Erro ao carregar itens da proposta", itemsError);
+        toast.error("Erro ao carregar itens da proposta: " + itemsError.message);
+        return;
+      }
+
+      logger.db(`✅ ${itemsData?.length || 0} itens carregados da proposta`);
+
+      // Mapear itens com dados completos dos produtos
+      const mappedItems: ProposalItem[] = (itemsData || []).map((item: any) => ({
+        id: item.id,
+        product_id: item.product_id,
+        fornecedor_id: item.fornecedor_id || undefined,
+        descricao: item.descricao || item.product?.nome || "",
+        codigo: item.codigo || item.product?.codigo || "",
+        unidade: item.unidade || item.product?.unidade || "un",
+        quantidade: item.quantidade,
+        custo_unitario: item.custo_unitario || item.product?.custo_medio || 0,
+        valor_unitario: item.valor_unitario || item.preco_unitario || 0,
+        preco_unitario: item.preco_unitario || item.valor_unitario || 0,
+        comissao_percentual: item.comissao_percentual || item.product?.comissao_agenciamento_padrao || 0,
+        periodo_locacao_meses: item.periodo_locacao_meses,
+        desconto: item.desconto || 0,
+        total: item.total || 0,
+        margem: item.margem,
+        estoque: item.estoque || item.product?.estoque_atual,
+        imagem_url: item.imagem_url || item.product?.imagem_principal,
+        vida_util_meses: item.product?.vida_util_meses || 36,
+      }));
+
+      setItems(mappedItems);
+
+      // Carregar dados do formulário
+      const clienteId = propostaData?.cliente_id || proposta.cliente_id;
+      setFormData({
+        modelo_id: propostaData?.modelo_id || proposta.modelo_id || "",
+        cliente_id: clienteId,
+        oportunidade_id: propostaData?.oportunidade_id || proposta.oportunidade_id || "",
+        tipo_operacao: propostaData?.tipo_operacao || proposta.tipo_operacao || "venda_direta",
+        data_proposta: propostaData?.data_proposta || proposta.data_proposta,
+        validade: propostaData?.validade || proposta.validade,
+        introducao: propostaData?.introducao || proposta.introducao || "",
+        observacoes_internas: propostaData?.observacoes_internas || proposta.observacoes_internas || "",
+        desconto_total: propostaData?.desconto_total || proposta.desconto_total || 0,
+        despesas_adicionais: propostaData?.despesas_adicionais || proposta.despesas_adicionais || 0,
+        status: propostaData?.status || proposta.status,
+        condicoes_comerciais: propostaData?.condicoes_comerciais || proposta.condicoes_comerciais || {
+          tipo: "nenhuma",
+          parcelas: 1,
+          forma_pagamento: "",
+          prazo_entrega: "",
+          garantia: "",
+        },
+      });
+
+      // Carregar oportunidades do cliente se houver cliente_id
+      if (clienteId) {
+        logger.db(`Carregando oportunidades do cliente: ${clienteId}`);
+        loadOportunidades(clienteId);
+      }
+      
+      logger.ui("✅ Dados da proposta carregados com sucesso");
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar proposta", error);
+      toast.error("Erro ao carregar dados da proposta: " + error.message);
+    }
   };
 
   const addProduto = (produto: any) => {
+    logger.ui(`Adicionando produto à proposta: ${produto.nome} (${produto.codigo})`);
+    
     const custoMedio = produto.custo_medio || 0;
     const isLocacao = formData.tipo_operacao.includes('locacao');
     
@@ -211,22 +469,26 @@ export default function PropostaFormDialog({
       if (formData.tipo_operacao === 'locacao_direta') {
         valorUnitario = produto.valor_locacao || 0;
         custoUnitario = calcularCustoLocacaoDireta(custoMedio, produto.vida_util_meses || 36);
+        logger.ui(`Locação direta: valor_unitario=${valorUnitario}, custo_unitario=${custoUnitario}`);
       } else {
         // Para locação agenciada: aguardar input do usuário
         valorUnitario = 0;
         custoUnitario = 0;
+        logger.ui("Locação agenciada: valores aguardando input do usuário");
       }
     } else {
       // Para venda direta: usar valor de venda
       if (formData.tipo_operacao === 'venda_direta') {
         valorUnitario = produto.valor_venda || 0;
-        if (produto.margem_lucro_venda) {
+        if (produto.margem_lucro_venda && custoMedio > 0) {
           valorUnitario = calcularValorComMargem(custoMedio, produto.margem_lucro_venda);
         }
+        logger.ui(`Venda direta: valor_unitario=${valorUnitario}, custo_unitario=${custoUnitario}`);
       } else {
         // Para venda agenciada: aguardar input do usuário
         valorUnitario = 0;
         custoUnitario = 0;
+        logger.ui("Venda agenciada: valores aguardando input do usuário");
       }
     }
 
@@ -234,8 +496,8 @@ export default function PropostaFormDialog({
 
     const newItem: ProposalItem = {
       product_id: produto.id,
-      descricao: produto.nome,
-      codigo: produto.codigo,
+      descricao: produto.nome || produto.descricao || "",
+      codigo: produto.codigo || "",
       unidade: produto.unidade || "un",
       quantidade: 1,
       custo_unitario: custoUnitario,
@@ -251,6 +513,7 @@ export default function PropostaFormDialog({
       vida_util_meses: produto.vida_util_meses || 36,
     };
 
+    logger.ui(`✅ Item adicionado: ${newItem.descricao}, Total: R$ ${newItem.total.toFixed(2)}`);
     setItems([...items, newItem]);
     setSearchProduto("");
   };
@@ -337,21 +600,27 @@ export default function PropostaFormDialog({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      // Calcular totais usando o hook
-      const calculations = useProposalCalculations(items.map(item => ({
-        product_id: item.product_id!,
-        fornecedor_id: item.fornecedor_id,
-        quantidade: item.quantidade,
-        custo_unitario: item.custo_unitario,
-        valor_unitario: item.valor_unitario,
-        comissao_percentual: item.comissao_percentual,
-        periodo_locacao_meses: item.periodo_locacao_meses,
-      })), formData.tipo_operacao);
-
-      const totalItens = calculations.valor_total;
-      const custoTotal = calculations.custo_total;
-      const lucroTotal = calculations.lucro_total;
-      const margemTotal = calculations.margem_percentual;
+      // Calcular totais manualmente (hook não pode ser usado dentro de função)
+      const calculations = items.map(item => {
+        const periodo = item.periodo_locacao_meses || 1;
+        let valor_subtotal = 0;
+        let custo_subtotal = 0;
+        
+        if (formData.tipo_operacao.includes('locacao')) {
+          valor_subtotal = item.valor_unitario * item.quantidade * periodo;
+          custo_subtotal = item.custo_unitario * item.quantidade * periodo;
+        } else {
+          valor_subtotal = item.valor_unitario * item.quantidade;
+          custo_subtotal = item.custo_unitario * item.quantidade;
+        }
+        
+        return { valor_subtotal, custo_subtotal };
+      });
+      
+      const totalItens = calculations.reduce((sum, calc) => sum + calc.valor_subtotal, 0);
+      const custoTotal = calculations.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
+      const lucroTotal = totalItens - custoTotal;
+      const margemTotal = totalItens > 0 ? (lucroTotal / totalItens) * 100 : 0;
       const totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
 
       const codigo = proposta?.codigo || await gerarCodigo();
@@ -359,8 +628,9 @@ export default function PropostaFormDialog({
       const proposalData = {
         codigo,
         versao: proposta?.versao || 1,
-        modelo_id: formData.modelo_id || null,
+        modelo_id: formData.modelo_id && formData.modelo_id !== "" ? formData.modelo_id : null,
         cliente_id: formData.cliente_id,
+        oportunidade_id: formData.oportunidade_id && formData.oportunidade_id !== "" ? formData.oportunidade_id : null,
         vendedor_id: user.id,
         tipo_operacao: formData.tipo_operacao,
         data_proposta: formData.data_proposta,
@@ -404,11 +674,19 @@ export default function PropostaFormDialog({
         proposalId = data.id;
       }
 
+      // Função helper para limpar UUID vazio
+      const cleanUUID = (value: any): string | null => {
+        if (!value || value === "" || value === "null" || value === "undefined") {
+          return null;
+        }
+        return value;
+      };
+
       // Inserir novos itens
       const itemsData = items.map(item => ({
         proposal_id: proposalId,
-        product_id: item.product_id,
-        fornecedor_id: item.fornecedor_id,
+        product_id: item.product_id ? cleanUUID(item.product_id) : null,
+        fornecedor_id: item.fornecedor_id ? cleanUUID(item.fornecedor_id) : null,
         descricao: item.descricao,
         codigo: item.codigo,
         unidade: item.unidade,
@@ -432,11 +710,13 @@ export default function PropostaFormDialog({
 
       if (itemsError) throw itemsError;
 
+      logger.ui(`✅ Proposta ${proposta ? 'atualizada' : 'criada'} com sucesso: ${codigo}`);
       toast.success(proposta ? "Proposta atualizada!" : "Proposta criada!");
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      toast.error(error.message);
+      logger.error("DB", "Erro ao salvar proposta", error);
+      toast.error(error.message || "Erro ao salvar proposta");
     } finally {
       setLoading(false);
     }
@@ -444,16 +724,36 @@ export default function PropostaFormDialog({
 
   const { totalItens, totalGeral } = calcularTotais();
   
-  // Calcular usando o hook
-  const calculations = useProposalCalculations(items.map(item => ({
-    product_id: item.product_id!,
-    fornecedor_id: item.fornecedor_id,
-    quantidade: item.quantidade,
-    custo_unitario: item.custo_unitario,
-    valor_unitario: item.valor_unitario,
-    comissao_percentual: item.comissao_percentual,
-    periodo_locacao_meses: item.periodo_locacao_meses,
-  })), formData.tipo_operacao);
+  // Calcular usando função auxiliar (hook não pode ser usado aqui)
+  const calculations = (() => {
+    const calcItems = items.map(item => {
+      const periodo = item.periodo_locacao_meses || 1;
+      let valor_subtotal = 0;
+      let custo_subtotal = 0;
+      
+      if (formData.tipo_operacao.includes('locacao')) {
+        valor_subtotal = item.valor_unitario * item.quantidade * periodo;
+        custo_subtotal = item.custo_unitario * item.quantidade * periodo;
+      } else {
+        valor_subtotal = item.valor_unitario * item.quantidade;
+        custo_subtotal = item.custo_unitario * item.quantidade;
+      }
+      
+      return { valor_subtotal, custo_subtotal };
+    });
+    
+    const valor_total = calcItems.reduce((sum, calc) => sum + calc.valor_subtotal, 0);
+    const custo_total = calcItems.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
+    const lucro_total = valor_total - custo_total;
+    const margem_percentual = valor_total > 0 ? (lucro_total / valor_total) * 100 : 0;
+    
+    return {
+      valor_total,
+      custo_total,
+      lucro_total,
+      margem_percentual: Number(margem_percentual.toFixed(2))
+    };
+  })();
   
   const filteredProdutos = produtos.filter(p => {
     const matchesSearch = p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
@@ -524,13 +824,57 @@ export default function PropostaFormDialog({
                   </p>
                 </div>
 
+                {/* Card com informações do cliente selecionado */}
+                {selectedCliente && (
+                  <Card className="p-4 bg-muted/50 border-2">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-lg">{selectedCliente.nome}</h3>
+                        <Badge variant="outline">{selectedCliente.tipo || "Cliente"}</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {selectedCliente.cnpj && (
+                          <div>
+                            <span className="text-muted-foreground">CNPJ: </span>
+                            <span className="font-mono">{selectedCliente.cnpj}</span>
+                          </div>
+                        )}
+                        {selectedCliente.email && (
+                          <div>
+                            <span className="text-muted-foreground">Email: </span>
+                            <span>{selectedCliente.email}</span>
+                          </div>
+                        )}
+                        {selectedCliente.telefone && (
+                          <div>
+                            <span className="text-muted-foreground">Telefone: </span>
+                            <span>{selectedCliente.telefone}</span>
+                          </div>
+                        )}
+                        {(selectedCliente.cidade || selectedCliente.estado) && (
+                          <div>
+                            <span className="text-muted-foreground">Localização: </span>
+                            <span>{[selectedCliente.cidade, selectedCliente.estado].filter(Boolean).join(" - ")}</span>
+                          </div>
+                        )}
+                      </div>
+                      {selectedCliente.origin_partner && (
+                        <div className="pt-2 border-t text-xs text-muted-foreground">
+                          <span>Parceiro de origem: </span>
+                          <span className="font-medium">{selectedCliente.origin_partner.nome_fantasia}</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <Label>Cliente *</Label>
                     <Select
                       value={formData.cliente_id}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, cliente_id: value })
+                        setFormData({ ...formData, cliente_id: value, oportunidade_id: "" })
                       }
                     >
                       <SelectTrigger>
@@ -539,11 +883,73 @@ export default function PropostaFormDialog({
                       <SelectContent>
                         {clientes.map((cliente) => (
                           <SelectItem key={cliente.id} value={cliente.id}>
-                            {cliente.nome}
+                            <div className="flex flex-col">
+                              <span className="font-medium">{cliente.nome}</span>
+                              {cliente.cnpj && (
+                                <span className="text-xs text-muted-foreground">
+                                  CNPJ: {cliente.cnpj}
+                                </span>
+                              )}
+                              {(cliente.cidade || cliente.estado) && (
+                                <span className="text-xs text-muted-foreground">
+                                  {[cliente.cidade, cliente.estado].filter(Boolean).join(" - ")}
+                                </span>
+                              )}
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div>
+                    <Label>Oportunidade (Opcional)</Label>
+                    <Select
+                      value={formData.oportunidade_id || undefined}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, oportunidade_id: value })
+                      }
+                      disabled={!formData.cliente_id || oportunidades.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={
+                          !formData.cliente_id 
+                            ? "Selecione um cliente primeiro" 
+                            : oportunidades.length === 0
+                            ? "Nenhuma oportunidade disponível"
+                            : "Selecione uma oportunidade"
+                        } />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {oportunidades.map((oportunidade) => (
+                          <SelectItem key={oportunidade.id} value={oportunidade.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{oportunidade.product_name}</span>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>{oportunidade.tipo_oportunidade}</span>
+                                {oportunidade.valor_estimado && (
+                                  <>
+                                    <span>•</span>
+                                    <span>R$ {oportunidade.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                                  </>
+                                )}
+                                {oportunidade.partner && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{oportunidade.partner.nome_fantasia}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formData.cliente_id && oportunidades.length === 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Nenhuma oportunidade ativa encontrada para este cliente
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -642,28 +1048,56 @@ export default function PropostaFormDialog({
                           className="flex items-center justify-between p-2 border rounded cursor-pointer hover:bg-accent"
                           onClick={() => addProduto(produto)}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-1">
                             {produto.imagem_principal && (
                               <img
                                 src={produto.imagem_principal}
                                 alt={produto.nome}
-                                className="h-8 w-8 object-cover rounded"
+                                className="h-10 w-10 object-cover rounded"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
                               />
                             )}
-                            <div>
-                              <p className="font-medium">{produto.nome}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {produto.codigo} | Estoque: {produto.estoque_atual}
-                              </p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{produto.nome}</p>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>{produto.codigo}</span>
+                                {produto.brand && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-medium">{produto.brand.nome}</span>
+                                  </>
+                                )}
+                                <span>•</span>
+                                <span>Estoque: {produto.estoque_atual || 0}</span>
+                                {produto.categoria && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{produto.categoria}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <p className="font-semibold">
+                          <div className="text-right">
                             {produto.valor_venda ? (
-                              `R$ ${produto.valor_venda.toFixed(2)}`
+                              <p className="font-semibold text-success">
+                                R$ {produto.valor_venda.toFixed(2)}
+                              </p>
+                            ) : produto.valor_locacao ? (
+                              <p className="font-semibold text-success text-sm">
+                                Locação: R$ {produto.valor_locacao.toFixed(2)}/mês
+                              </p>
                             ) : (
                               <span className="text-muted-foreground text-sm">Sem preço</span>
                             )}
-                          </p>
+                            {produto.custo_medio && (
+                              <p className="text-xs text-muted-foreground">
+                                Custo: R$ {produto.custo_medio.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -678,6 +1112,34 @@ export default function PropostaFormDialog({
                     return (
                       <Card key={index} className="p-4">
                         <div className="space-y-4">
+                          {/* Header do Item com informações do produto */}
+                          {item.product_id && (
+                            <div className="flex items-center gap-3 pb-3 border-b">
+                              {item.imagem_url && (
+                                <img
+                                  src={item.imagem_url}
+                                  alt={item.descricao}
+                                  className="h-12 w-12 object-cover rounded"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <div className="flex-1">
+                                <p className="font-medium">{item.descricao}</p>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span>Código: {item.codigo}</span>
+                                  {item.estoque !== undefined && (
+                                    <>
+                                      <span>•</span>
+                                      <span>Estoque: {item.estoque}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
                           {/* Linha 1: Descrição e Fornecedor (se agenciada) */}
                           <div className="grid gap-4 md:grid-cols-2">
                             <div>
@@ -687,6 +1149,7 @@ export default function PropostaFormDialog({
                                 onChange={(e) =>
                                   updateItem(index, "descricao", e.target.value)
                                 }
+                                placeholder="Descrição do item"
                               />
                             </div>
                             {isAgenciada && (
@@ -704,7 +1167,14 @@ export default function PropostaFormDialog({
                                   <SelectContent>
                                     {fornecedores.map((fornecedor) => (
                                       <SelectItem key={fornecedor.id} value={fornecedor.id}>
-                                        {fornecedor.nome}
+                                        <div className="flex flex-col">
+                                          <span className="font-medium">{fornecedor.nome}</span>
+                                          {fornecedor.cnpj && (
+                                            <span className="text-xs text-muted-foreground">
+                                              CNPJ: {fornecedor.cnpj}
+                                            </span>
+                                          )}
+                                        </div>
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

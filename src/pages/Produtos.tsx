@@ -36,6 +36,7 @@ import { toast } from "sonner";
 import { ProdutoFormDialog } from "@/components/Produtos/ProdutoFormDialog";
 import { ImportacaoProdutosDialog } from "@/components/Produtos/ImportacaoProdutosDialog";
 import { importUrovoProducts } from "@/utils/importUrovoProducts";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 export default function Produtos() {
   const [products, setProducts] = useState<any[]>([]);
@@ -375,25 +376,11 @@ export default function Produtos() {
                     return (
                       <TableRow key={product.id}>
                         <TableCell>
-                          {product.imagem_principal ? (
-                            <img
-                              src={product.imagem_principal}
-                              alt={product.nome}
-                              className="w-12 h-12 object-cover rounded"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                const fallback = target.nextElementSibling as HTMLElement;
-                                if (fallback) fallback.style.display = 'flex';
-                              }}
-                            />
-                          ) : null}
-                          <div 
-                            className="w-12 h-12 bg-muted rounded flex items-center justify-center"
-                            style={{ display: product.imagem_principal ? 'none' : 'flex' }}
-                          >
-                            <Package className="h-6 w-6 text-muted-foreground" />
-                          </div>
+                          <SafeImage
+                            src={product.imagem_principal}
+                            alt={product.nome}
+                            className="w-12 h-12 object-cover rounded"
+                          />
                         </TableCell>
                         <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
                         <TableCell className="font-medium">{product.nome}</TableCell>

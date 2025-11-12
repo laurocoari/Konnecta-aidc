@@ -20,7 +20,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Package, DollarSign, FileText, Image, Video, Plus, Trash2, Upload } from "lucide-react";
+import { Package, DollarSign, FileText, Image, Video, Plus, Trash2, Upload, Building2, Tag } from "lucide-react";
+import { SafeImage } from "@/components/ui/SafeImage";
+import { Badge } from "@/components/ui/badge";
 
 interface ProdutoFormDialogProps {
   open: boolean;
@@ -38,6 +40,8 @@ export function ProdutoFormDialog({
   const [loading, setLoading] = useState(false);
   const [brands, setBrands] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [selectedBrand, setSelectedBrand] = useState<any>(null);
+  const [brandSuppliers, setBrandSuppliers] = useState<any[]>([]);
   const [formData, setFormData] = useState<any>({
     codigo: "",
     nome: "",
@@ -74,9 +78,19 @@ export function ProdutoFormDialog({
     loadBrands();
   }, []);
 
+  // Carregar marca e fornecedores quando brand_id mudar
+  useEffect(() => {
+    if (formData.brand_id) {
+      loadBrandAndSuppliers(formData.brand_id);
+    } else {
+      setSelectedBrand(null);
+      setBrandSuppliers([]);
+    }
+  }, [formData.brand_id]);
+
   useEffect(() => {
     if (product) {
-      setFormData({
+      const productData = {
         codigo: product.codigo || "",
         nome: product.nome || "",
         categoria: product.categoria || "",
@@ -106,7 +120,13 @@ export function ProdutoFormDialog({
         status: product.status || "ativo",
         especificacoes: product.especificacoes || [],
         videos: product.videos || [],
-      });
+      };
+      setFormData(productData);
+      
+      // Carregar marca e fornecedores se houver brand_id
+      if (product.brand_id) {
+        loadBrandAndSuppliers(product.brand_id);
+      }
     } else {
       // Reset form
       setFormData({
@@ -140,6 +160,9 @@ export function ProdutoFormDialog({
         especificacoes: [],
         videos: [],
       });
+      // Limpar marca e fornecedores ao resetar
+      setSelectedBrand(null);
+      setBrandSuppliers([]);
     }
   }, [product, open]);
 
@@ -155,6 +178,54 @@ export function ProdutoFormDialog({
       setBrands(data || []);
     } catch (error: any) {
       console.error("Error loading brands:", error);
+    }
+  };
+
+  const loadBrandAndSuppliers = async (brandId: string) => {
+    try {
+      // Carregar dados da marca
+      const { data: brandData, error: brandError } = await supabase
+        .from("brands")
+        .select("*")
+        .eq("id", brandId)
+        .single();
+
+      if (brandError) throw brandError;
+      setSelectedBrand(brandData);
+
+      // Carregar fornecedores relacionados à marca
+      const { data: suppliersData, error: suppliersError } = await supabase
+        .from("supplier_brands")
+        .select(`
+          supplier_id,
+          suppliers (
+            id,
+            nome,
+            cnpj,
+            email,
+            telefone,
+            status
+          )
+        `)
+        .eq("brand_id", brandId);
+
+      if (suppliersError) {
+        console.error("Error loading suppliers:", suppliersError);
+        setBrandSuppliers([]);
+        return;
+      }
+
+      // Filtrar apenas fornecedores ativos e mapear dados
+      const activeSuppliers = (suppliersData || [])
+        .map((sb: any) => sb.suppliers)
+        .filter((s: any) => s && s.status === 'ativo')
+        .slice(0, 5); // Limitar a 5 principais
+
+      setBrandSuppliers(activeSuppliers);
+    } catch (error: any) {
+      console.error("Error loading brand and suppliers:", error);
+      setSelectedBrand(null);
+      setBrandSuppliers([]);
     }
   };
 
@@ -288,8 +359,27 @@ export function ProdutoFormDialog({
     setLoading(true);
 
     try {
+      // Função helper para converter strings vazias de UUID para null
+      const cleanUUID = (value: any): string | null => {
+        if (!value || value === "" || value === "null" || value === "undefined") {
+          return null;
+        }
+        return value;
+      };
+
+      // Função helper para limpar strings vazias de campos opcionais
+      const cleanString = (value: any): string | null => {
+        if (!value || value === "" || value.trim() === "") {
+          return null;
+        }
+        return value.trim();
+      };
+
       const dataToSave = {
         ...formData,
+        // Campos UUID - converter string vazia para null
+        brand_id: cleanUUID(formData.brand_id),
+        // Campos numéricos
         custo_medio: formData.custo_medio ? parseFloat(formData.custo_medio) : null,
         margem_lucro: formData.margem_lucro ? parseFloat(formData.margem_lucro) : null,
         valor_venda: formData.valor_venda ? parseFloat(formData.valor_venda) : null,
@@ -300,6 +390,15 @@ export function ProdutoFormDialog({
         ipi: formData.ipi ? parseFloat(formData.ipi) : null,
         pis: formData.pis ? parseFloat(formData.pis) : null,
         cofins: formData.cofins ? parseFloat(formData.cofins) : null,
+        // Campos de texto opcionais
+        descricao: cleanString(formData.descricao),
+        localizacao: cleanString(formData.localizacao),
+        observacoes_fiscais: cleanString(formData.observacoes_fiscais),
+        imagem_principal: cleanString(formData.imagem_principal),
+        // Arrays - manter como estão ou null se vazio
+        galeria: formData.galeria && formData.galeria.length > 0 ? formData.galeria : null,
+        especificacoes: formData.especificacoes && formData.especificacoes.length > 0 ? formData.especificacoes : null,
+        videos: formData.videos && formData.videos.length > 0 ? formData.videos : null,
       };
 
       if (product) {
@@ -330,13 +429,95 @@ export function ProdutoFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{product ? "Editar Produto" : "Novo Produto"}</DialogTitle>
           <DialogDescription>
             Preencha os dados do produto organizados por categoria
           </DialogDescription>
         </DialogHeader>
+
+        {/* Header Visual com Foto, Nome, Marca e Fornecedores */}
+        {(formData.nome || formData.imagem_principal || selectedBrand) && (
+          <div className="border rounded-lg p-6 bg-gradient-to-r from-background to-muted/20 mb-4">
+            <div className="flex gap-6 items-start">
+              {/* Foto do Produto */}
+              <div className="flex-shrink-0">
+                <SafeImage
+                  src={formData.imagem_principal}
+                  alt={formData.nome || "Produto"}
+                  className="w-32 h-32 object-cover rounded-lg border-2 border-border shadow-md"
+                  fallbackClassName="w-32 h-32"
+                />
+              </div>
+
+              {/* Informações do Produto */}
+              <div className="flex-1 min-w-0">
+                {/* Nome do Produto - Letras Grandes */}
+                <h2 className="text-3xl font-bold text-foreground mb-3 line-clamp-2">
+                  {formData.nome || "Nome do Produto"}
+                </h2>
+
+                {/* Código */}
+                {formData.codigo && (
+                  <p className="text-sm text-muted-foreground font-mono mb-4">
+                    Código: {formData.codigo}
+                  </p>
+                )}
+
+                {/* Marca */}
+                {selectedBrand && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <Tag className="h-4 w-4 text-muted-foreground" />
+                    <Badge variant="outline" className="text-base px-3 py-1">
+                      {selectedBrand.nome}
+                    </Badge>
+                    {selectedBrand.logo_url && (
+                      <img
+                        src={selectedBrand.logo_url}
+                        alt={selectedBrand.nome}
+                        className="h-6 w-auto object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Principais Fornecedores da Marca */}
+                {brandSuppliers.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Principais Fornecedores:
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {brandSuppliers.map((supplier: any) => (
+                        <Badge
+                          key={supplier.id}
+                          variant="secondary"
+                          className="text-xs"
+                        >
+                          {supplier.nome}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mensagem quando não há marca selecionada */}
+                {!selectedBrand && formData.brand_id && (
+                  <p className="text-sm text-muted-foreground italic">
+                    Marca não encontrada
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="geral" className="w-full">
