@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import {
@@ -13,39 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ClienteFormDialog } from "@/components/Clientes/ClienteFormDialog";
 import { Search, Phone, Mail, Building2, Eye } from "lucide-react";
-
-const mockClientes = [
-  {
-    id: 1,
-    nome: "TechCorp Ltda",
-    cnpj: "12.345.678/0001-90",
-    contato: "João Silva",
-    email: "joao@techcorp.com",
-    telefone: "(11) 98765-4321",
-    status: "ativo",
-    tipo: "cliente",
-  },
-  {
-    id: 2,
-    nome: "Inovação Digital",
-    cnpj: "98.765.432/0001-10",
-    contato: "Maria Santos",
-    email: "maria@inovacao.com",
-    telefone: "(21) 91234-5678",
-    status: "potencial",
-    tipo: "lead",
-  },
-  {
-    id: 3,
-    nome: "Distribuidora Sul",
-    cnpj: "11.222.333/0001-44",
-    contato: "Carlos Oliveira",
-    email: "carlos@distrisul.com",
-    telefone: "(51) 99876-5432",
-    status: "ativo",
-    tipo: "revendedor",
-  },
-];
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 const statusColors = {
   ativo: "success",
@@ -55,6 +25,85 @@ const statusColors = {
 
 export default function Clientes() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [clientes, setClientes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadClientes();
+  }, []);
+
+  const loadClientes = async () => {
+    try {
+      setLoading(true);
+      logger.db("Carregando clientes do banco de dados");
+      
+      // Verificar autenticação primeiro
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        logger.error("AUTH", "Usuário não autenticado", authError);
+        toast.error("Usuário não autenticado. Faça login novamente.");
+        return;
+      }
+      
+      logger.db(`Usuário autenticado: ${user.email} (${user.id})`);
+      
+      const { data, error } = await supabase
+        .from("clients")
+        .select(`
+          *,
+          origin_partner:partners!clients_origin_partner_id_fkey(
+            id,
+            nome_fantasia,
+            razao_social
+          ),
+          exclusive_partner:partners!clients_exclusive_partner_id_fkey(
+            id,
+            nome_fantasia,
+            razao_social
+          )
+        `)
+        .order("nome");
+
+      if (error) {
+        logger.error("DB", "Erro ao carregar clientes", error);
+        logger.error("DB", `Código do erro: ${error.code}`, error);
+        
+        // Mensagem mais específica baseada no erro
+        if (error.code === 'PGRST116' || error.message.includes('permission denied') || error.message.includes('row-level security')) {
+          toast.error("Sem permissão para visualizar clientes. Verifique seu perfil de acesso.");
+          logger.warn("DB", "Possível problema de RLS - usuário pode não ter role adequado");
+        } else {
+          toast.error("Erro ao carregar clientes: " + error.message);
+        }
+        return;
+      }
+
+      logger.db(`✅ ${data?.length || 0} clientes carregados`);
+      
+      if (data && data.length > 0) {
+        logger.db(`Clientes encontrados: ${data.map(c => c.nome).join(", ")}`);
+      } else {
+        logger.warn("DB", "Nenhum cliente encontrado na tabela");
+      }
+      
+      setClientes(data || []);
+    } catch (error: any) {
+      logger.error("DB", "Erro ao carregar clientes", error);
+      toast.error("Erro ao carregar clientes: " + (error.message || "Erro desconhecido"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredClientes = clientes.filter((cliente) => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      cliente.nome.toLowerCase().includes(searchLower) ||
+      cliente.cnpj.toLowerCase().includes(searchLower) ||
+      cliente.contato_principal.toLowerCase().includes(searchLower) ||
+      cliente.email.toLowerCase().includes(searchLower)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -65,7 +114,7 @@ export default function Clientes() {
             Gerencie sua base de clientes e prospects
           </p>
         </div>
-        <ClienteFormDialog />
+        <ClienteFormDialog onSuccess={loadClientes} />
       </div>
 
       <Card className="glass-strong p-6">
@@ -81,61 +130,72 @@ export default function Clientes() {
           </div>
         </div>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Cliente</TableHead>
-              <TableHead>CNPJ</TableHead>
-              <TableHead>Contato</TableHead>
-              <TableHead>Informações</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mockClientes.map((cliente) => (
-              <TableRow key={cliente.id}>
-                <TableCell className="font-medium">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    {cliente.nome}
-                  </div>
-                </TableCell>
-                <TableCell className="font-mono text-sm">
-                  {cliente.cnpj}
-                </TableCell>
-                <TableCell>{cliente.contato}</TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1 text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Mail className="h-3 w-3" />
-                      {cliente.email}
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-3 w-3" />
-                      {cliente.telefone}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={statusColors[cliente.status as keyof typeof statusColors]}>
-                    {cliente.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{cliente.tipo}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <Eye className="h-4 w-4" />
-                    Ver Detalhes
-                  </Button>
-                </TableCell>
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            Carregando clientes...
+          </div>
+        ) : filteredClientes.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            {searchTerm 
+              ? "Nenhum cliente encontrado com os filtros aplicados."
+              : "Nenhum cliente cadastrado ainda. Use o botão acima para cadastrar um novo cliente."}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead>CNPJ</TableHead>
+                <TableHead>Contato</TableHead>
+                <TableHead>Informações</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredClientes.map((cliente) => (
+                <TableRow key={cliente.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      {cliente.nome}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {cliente.cnpj}
+                  </TableCell>
+                  <TableCell>{cliente.contato_principal}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1 text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="h-3 w-3" />
+                        {cliente.email}
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="h-3 w-3" />
+                        {cliente.telefone}
+                      </div>
+                      {(cliente.cidade || cliente.estado) && (
+                        <div className="text-xs text-muted-foreground">
+                          {cliente.cidade}, {cliente.estado}
+                        </div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{cliente.tipo || "cliente"}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" className="gap-2">
+                      <Eye className="h-4 w-4" />
+                      Ver Detalhes
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Card>
     </div>
   );

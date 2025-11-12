@@ -59,7 +59,8 @@ export const useProposalCalculations = (
     const valor_total = calculations.reduce((sum, item) => sum + item.valor_subtotal, 0);
     const custo_total = calculations.reduce((sum, item) => sum + (item.custo_unitario * item.quantidade * (item.periodo_locacao_meses || 1)), 0);
     const lucro_total = valor_total - custo_total;
-    const margem_percentual = valor_total > 0 ? (lucro_total / valor_total) * 100 : 0;
+    // Margem sobre o custo (padrão comercial) - não sobre o valor de venda
+    const margem_percentual = custo_total > 0 ? (lucro_total / custo_total) * 100 : 0;
     
     return {
       items: calculations,

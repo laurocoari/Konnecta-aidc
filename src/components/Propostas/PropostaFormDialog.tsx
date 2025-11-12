@@ -620,7 +620,8 @@ export default function PropostaFormDialog({
       const totalItens = calculations.reduce((sum, calc) => sum + calc.valor_subtotal, 0);
       const custoTotal = calculations.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
       const lucroTotal = totalItens - custoTotal;
-      const margemTotal = totalItens > 0 ? (lucroTotal / totalItens) * 100 : 0;
+      // Margem sobre o custo (padrão comercial) - não sobre o valor de venda
+      const margemTotal = custoTotal > 0 ? (lucroTotal / custoTotal) * 100 : 0;
       const totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
 
       const codigo = proposta?.codigo || await gerarCodigo();
@@ -745,7 +746,8 @@ export default function PropostaFormDialog({
     const valor_total = calcItems.reduce((sum, calc) => sum + calc.valor_subtotal, 0);
     const custo_total = calcItems.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
     const lucro_total = valor_total - custo_total;
-    const margem_percentual = valor_total > 0 ? (lucro_total / valor_total) * 100 : 0;
+    // Margem sobre o custo (padrão comercial) - não sobre o valor de venda
+    const margem_percentual = custo_total > 0 ? (lucro_total / custo_total) * 100 : 0;
     
     return {
       valor_total,
@@ -876,30 +878,48 @@ export default function PropostaFormDialog({
                       onValueChange={(value) =>
                         setFormData({ ...formData, cliente_id: value, oportunidade_id: "" })
                       }
+                      disabled={loading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione o cliente" />
+                        <SelectValue placeholder={
+                          loading 
+                            ? "Carregando clientes..." 
+                            : clientes.length === 0 
+                            ? "Nenhum cliente cadastrado" 
+                            : "Selecione o cliente"
+                        } />
                       </SelectTrigger>
                       <SelectContent>
-                        {clientes.map((cliente) => (
-                          <SelectItem key={cliente.id} value={cliente.id}>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{cliente.nome}</span>
-                              {cliente.cnpj && (
-                                <span className="text-xs text-muted-foreground">
-                                  CNPJ: {cliente.cnpj}
-                                </span>
-                              )}
-                              {(cliente.cidade || cliente.estado) && (
-                                <span className="text-xs text-muted-foreground">
-                                  {[cliente.cidade, cliente.estado].filter(Boolean).join(" - ")}
-                                </span>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
+                        {clientes.length === 0 ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            Nenhum cliente encontrado. Cadastre clientes primeiro.
+                          </div>
+                        ) : (
+                          clientes.map((cliente) => (
+                            <SelectItem key={cliente.id} value={cliente.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{cliente.nome}</span>
+                                {cliente.cnpj && (
+                                  <span className="text-xs text-muted-foreground">
+                                    CNPJ: {cliente.cnpj}
+                                  </span>
+                                )}
+                                {(cliente.cidade || cliente.estado) && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {[cliente.cidade, cliente.estado].filter(Boolean).join(" - ")}
+                                  </span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
+                    {clientes.length === 0 && !loading && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        💡 Vá para a página de Clientes para cadastrar novos clientes.
+                      </p>
+                    )}
                   </div>
 
                   <div>
