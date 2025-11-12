@@ -380,12 +380,20 @@ export default function Produtos() {
                               src={product.imagem_principal}
                               alt={product.nome}
                               className="w-12 h-12 object-cover rounded"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const fallback = target.nextElementSibling as HTMLElement;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
                             />
-                          ) : (
-                            <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
-                              <Package className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
+                          ) : null}
+                          <div 
+                            className="w-12 h-12 bg-muted rounded flex items-center justify-center"
+                            style={{ display: product.imagem_principal ? 'none' : 'flex' }}
+                          >
+                            <Package className="h-6 w-6 text-muted-foreground" />
+                          </div>
                         </TableCell>
                         <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
                         <TableCell className="font-medium">{product.nome}</TableCell>
@@ -400,8 +408,8 @@ export default function Produtos() {
                           {product.estoque_minimo}
                         </TableCell>
                         <TableCell className="text-right">
-                          {product.valor_custo
-                            ? `R$ ${product.valor_custo.toLocaleString("pt-BR", {
+                          {product.custo_medio
+                            ? `R$ ${product.custo_medio.toLocaleString("pt-BR", {
                                 minimumFractionDigits: 2,
                               })}`
                             : "-"}

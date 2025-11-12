@@ -41,33 +41,36 @@ export async function importUrovoProducts() {
     const response = await fetch('/urovo_products_import.csv');
     const csvText = await response.text();
     
-    const lines = csvText.split('\n');
-    const headers = lines[0].split(',');
+    // Parse CSV com suporte a multilinha
+    const rows = parseCSVWithMultiline(csvText);
     
+    if (rows.length === 0) {
+      throw new Error("Nenhuma linha encontrada no CSV");
+    }
+
+    const headers = rows[0];
     let successCount = 0;
     let errorCount = 0;
     const errors: string[] = [];
 
     // Processar cada linha (pular o cabeçalho)
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+    for (let i = 1; i < rows.length; i++) {
+      const values = rows[i];
+      
+      if (values.length === 0 || !values[0]) continue;
 
       try {
-        // Parse CSV complexo (com vírgulas dentro de aspas)
-        const values = parseCSVLine(line);
-        
-        if (values.length < headers.length) {
-          console.warn(`Linha ${i + 1} incompleta, pulando...`);
-          continue;
-        }
-
         const rowData: any = {};
         headers.forEach((header, index) => {
           const cleanHeader = header.trim();
           const value = values[index]?.trim() || '';
           rowData[cleanHeader] = value;
         });
+
+        if (!rowData.codigo || !rowData.nome) {
+          console.warn(`Linha ${i + 1} sem código ou nome, pulando...`);
+          continue;
+        }
 
         // Verificar se o produto já existe
         const { data: existingProduct } = await supabase
@@ -115,27 +118,60 @@ export async function importUrovoProducts() {
   }
 }
 
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+function parseCSVWithMultiline(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let insideQuotes = false;
+  
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
     
     if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
+      if (insideQuotes && nextChar === '"') {
+        // Escaped quote
+        currentCell += '"';
+        i++; // Skip next quote
+      } else {
+        // Toggle quote state
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      // End of cell
+      currentRow.push(currentCell);
+      currentCell = '';
+    } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+      // End of row
+      if (char === '\r' && nextChar === '\n') {
+        i++; // Skip \n in \r\n
+      }
+      
+      if (currentCell || currentRow.length > 0) {
+        currentRow.push(currentCell);
+        if (currentRow.some(cell => cell.trim())) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentCell = '';
+      }
     } else {
-      current += char;
+      // Regular character
+      currentCell += char;
     }
   }
   
-  result.push(current);
-  return result;
+  // Add last row if exists
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    if (currentRow.some(cell => cell.trim())) {
+      rows.push(currentRow);
+    }
+  }
+  
+  return rows;
 }
+
 
 async function createProduct(rowData: ProductImportData) {
   // Processar marca
@@ -161,22 +197,39 @@ async function createProduct(rowData: ProductImportData) {
     }
   }
 
+  // Processar imagem principal
+  const imagemPrincipal = rowData.imagem_principal?.trim() || null;
+
   // Processar galeria de imagens
   const galeria = rowData.galeria_imagens
-    ? rowData.galeria_imagens.split('|').map(url => ({ url: url.trim() }))
+    ? rowData.galeria_imagens
+        .split('|')
+        .map(url => url.trim())
+        .filter(url => url)
+        .map(url => ({ url }))
     : [];
 
   // Processar vídeos
   const videos = rowData.videos_youtube
-    ? rowData.videos_youtube.split('|').map(url => ({ url: url.trim(), type: 'youtube' }))
+    ? rowData.videos_youtube
+        .split('|')
+        .map(url => url.trim())
+        .filter(url => url)
+        .map(url => ({ url, type: 'youtube' }))
     : [];
 
   // Processar especificações
   const especificacoes = rowData.especificacoes
-    ? rowData.especificacoes.split('|').map(spec => {
-        const [nome, valor] = spec.split(':');
-        return { nome: nome?.trim() || '', valor: valor?.trim() || '' };
-      })
+    ? rowData.especificacoes
+        .split('|')
+        .map(spec => {
+          const [nome, valor] = spec.split(':');
+          return { 
+            nome: nome?.trim() || '', 
+            valor: valor?.trim() || '' 
+          };
+        })
+        .filter(spec => spec.nome && spec.valor)
     : [];
 
   // Criar produto
@@ -204,12 +257,15 @@ async function createProduct(rowData: ProductImportData) {
     pis: parseFloat(rowData.pis as any) || null,
     cofins: parseFloat(rowData.cofins as any) || null,
     observacoes_fiscais: rowData.observacoes_fiscais || null,
-    imagem_principal: rowData.imagem_principal || null,
+    imagem_principal: imagemPrincipal,
     galeria: galeria.length > 0 ? galeria : null,
     videos: videos.length > 0 ? videos : null,
     especificacoes: especificacoes.length > 0 ? especificacoes : null,
     status: rowData.status || 'ativo',
   };
+
+  console.log(`📸 Imagem principal: ${imagemPrincipal || 'nenhuma'}`);
+  console.log(`🖼️ Galeria: ${galeria.length} imagens`);
 
   const { error } = await supabase
     .from('products')
@@ -242,22 +298,39 @@ async function updateProduct(productId: string, rowData: ProductImportData) {
     }
   }
 
+  // Processar imagem principal
+  const imagemPrincipal = rowData.imagem_principal?.trim() || null;
+
   // Processar galeria de imagens
   const galeria = rowData.galeria_imagens
-    ? rowData.galeria_imagens.split('|').map(url => ({ url: url.trim() }))
+    ? rowData.galeria_imagens
+        .split('|')
+        .map(url => url.trim())
+        .filter(url => url)
+        .map(url => ({ url }))
     : [];
 
   // Processar vídeos
   const videos = rowData.videos_youtube
-    ? rowData.videos_youtube.split('|').map(url => ({ url: url.trim(), type: 'youtube' }))
+    ? rowData.videos_youtube
+        .split('|')
+        .map(url => url.trim())
+        .filter(url => url)
+        .map(url => ({ url, type: 'youtube' }))
     : [];
 
   // Processar especificações
   const especificacoes = rowData.especificacoes
-    ? rowData.especificacoes.split('|').map(spec => {
-        const [nome, valor] = spec.split(':');
-        return { nome: nome?.trim() || '', valor: valor?.trim() || '' };
-      })
+    ? rowData.especificacoes
+        .split('|')
+        .map(spec => {
+          const [nome, valor] = spec.split(':');
+          return { 
+            nome: nome?.trim() || '', 
+            valor: valor?.trim() || '' 
+          };
+        })
+        .filter(spec => spec.nome && spec.valor)
     : [];
 
   // Atualizar produto
@@ -284,12 +357,15 @@ async function updateProduct(productId: string, rowData: ProductImportData) {
     pis: parseFloat(rowData.pis as any) || null,
     cofins: parseFloat(rowData.cofins as any) || null,
     observacoes_fiscais: rowData.observacoes_fiscais || null,
-    imagem_principal: rowData.imagem_principal || null,
+    imagem_principal: imagemPrincipal,
     galeria: galeria.length > 0 ? galeria : null,
     videos: videos.length > 0 ? videos : null,
     especificacoes: especificacoes.length > 0 ? especificacoes : null,
     status: rowData.status || 'ativo',
   };
+
+  console.log(`📸 Imagem principal: ${imagemPrincipal || 'nenhuma'}`);
+  console.log(`🖼️ Galeria: ${galeria.length} imagens`);
 
   const { error } = await supabase
     .from('products')
