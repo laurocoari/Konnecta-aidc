@@ -501,7 +501,11 @@ export default function PropostaFormDialog({
                             </div>
                           </div>
                           <p className="font-semibold">
-                            R$ {produto.valor_venda?.toFixed(2)}
+                            {produto.valor_venda ? (
+                              `R$ ${produto.valor_venda.toFixed(2)}`
+                            ) : (
+                              <span className="text-muted-foreground text-sm">Sem preço</span>
+                            )}
                           </p>
                         </div>
                       ))}
