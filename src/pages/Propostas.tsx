@@ -43,10 +43,25 @@ const statusLabels = {
   substituida: "Substituída",
 };
 
+const tipoOperacaoColors = {
+  venda_direta: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+  venda_agenciada: "bg-purple-100 text-purple-800 hover:bg-purple-100",
+  locacao_direta: "bg-green-100 text-green-800 hover:bg-green-100",
+  locacao_agenciada: "bg-orange-100 text-orange-800 hover:bg-orange-100",
+} as const;
+
+const tipoOperacaoLabels = {
+  venda_direta: "Venda Direta",
+  venda_agenciada: "Venda Agenciada",
+  locacao_direta: "Locação Direta",
+  locacao_agenciada: "Locação Agenciada",
+};
+
 export default function Propostas() {
   const [propostas, setPropostas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterTipo, setFilterTipo] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [selectedProposta, setSelectedProposta] = useState<any>(null);
@@ -122,10 +137,11 @@ export default function Propostas() {
   // Filtrar propostas
   const filteredPropostas = propostas.filter((proposta) => {
     const matchStatus = filterStatus === "all" || proposta.status === filterStatus;
+    const matchTipo = filterTipo === "all" || proposta.tipo_operacao === filterTipo;
     const matchSearch =
       proposta.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       proposta.cliente?.nome.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchStatus && matchSearch;
+    return matchStatus && matchTipo && matchSearch;
   });
 
   return (
@@ -185,12 +201,24 @@ export default function Propostas() {
               <SelectValue placeholder="Filtrar por status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="all">Todos os status</SelectItem>
               <SelectItem value="rascunho">Rascunho</SelectItem>
               <SelectItem value="enviada">Enviada</SelectItem>
               <SelectItem value="aprovada">Aprovada</SelectItem>
               <SelectItem value="recusada">Recusada</SelectItem>
               <SelectItem value="substituida">Substituída</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterTipo} onValueChange={setFilterTipo}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar por tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="venda_direta">Venda Direta</SelectItem>
+              <SelectItem value="venda_agenciada">Venda Agenciada</SelectItem>
+              <SelectItem value="locacao_direta">Locação Direta</SelectItem>
+              <SelectItem value="locacao_agenciada">Locação Agenciada</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -207,6 +235,7 @@ export default function Propostas() {
               <TableRow>
                 <TableHead>Número</TableHead>
                 <TableHead>Versão</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Data</TableHead>
@@ -226,6 +255,13 @@ export default function Propostas() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">v{proposta.versao}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={tipoOperacaoColors[proposta.tipo_operacao as keyof typeof tipoOperacaoColors] || ""}
+                    >
+                      {tipoOperacaoLabels[proposta.tipo_operacao as keyof typeof tipoOperacaoLabels] || "N/A"}
+                    </Badge>
                   </TableCell>
                   <TableCell>{proposta.cliente?.nome}</TableCell>
                   <TableCell>

@@ -669,6 +669,7 @@ export type Database = {
           cfop: string | null
           codigo: string
           cofins: number | null
+          comissao_agenciamento_padrao: number | null
           created_at: string
           cst: string | null
           custo_medio: number | null
@@ -685,18 +686,24 @@ export type Database = {
           ipi: number | null
           localizacao: string | null
           margem_lucro: number | null
+          margem_lucro_venda: number | null
           ncm: string | null
           nome: string
           observacoes_fiscais: string | null
           origem: string | null
+          permite_agenciamento: boolean | null
           pis: number | null
           status: string
           tipo: string
+          tipo_disponibilidade:
+            | Database["public"]["Enums"]["tipo_disponibilidade"]
+            | null
           ultima_compra: string | null
           unidade: string | null
           updated_at: string
           valor_locacao: number | null
           valor_venda: number | null
+          vida_util_meses: number | null
           videos: Json | null
         }
         Insert: {
@@ -705,6 +712,7 @@ export type Database = {
           cfop?: string | null
           codigo: string
           cofins?: number | null
+          comissao_agenciamento_padrao?: number | null
           created_at?: string
           cst?: string | null
           custo_medio?: number | null
@@ -721,18 +729,24 @@ export type Database = {
           ipi?: number | null
           localizacao?: string | null
           margem_lucro?: number | null
+          margem_lucro_venda?: number | null
           ncm?: string | null
           nome: string
           observacoes_fiscais?: string | null
           origem?: string | null
+          permite_agenciamento?: boolean | null
           pis?: number | null
           status?: string
           tipo: string
+          tipo_disponibilidade?:
+            | Database["public"]["Enums"]["tipo_disponibilidade"]
+            | null
           ultima_compra?: string | null
           unidade?: string | null
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
+          vida_util_meses?: number | null
           videos?: Json | null
         }
         Update: {
@@ -741,6 +755,7 @@ export type Database = {
           cfop?: string | null
           codigo?: string
           cofins?: number | null
+          comissao_agenciamento_padrao?: number | null
           created_at?: string
           cst?: string | null
           custo_medio?: number | null
@@ -757,18 +772,24 @@ export type Database = {
           ipi?: number | null
           localizacao?: string | null
           margem_lucro?: number | null
+          margem_lucro_venda?: number | null
           ncm?: string | null
           nome?: string
           observacoes_fiscais?: string | null
           origem?: string | null
+          permite_agenciamento?: boolean | null
           pis?: number | null
           status?: string
           tipo?: string
+          tipo_disponibilidade?:
+            | Database["public"]["Enums"]["tipo_disponibilidade"]
+            | null
           ultima_compra?: string | null
           unidade?: string | null
           updated_at?: string
           valor_locacao?: number | null
           valor_venda?: number | null
+          vida_util_meses?: number | null
           videos?: Json | null
         }
         Relationships: [
@@ -811,53 +832,78 @@ export type Database = {
       proposal_items: {
         Row: {
           codigo: string | null
+          comissao_percentual: number | null
           created_at: string
+          custo_unitario: number | null
           desconto: number | null
           descricao: string
           estoque: number | null
+          fornecedor_id: string | null
           id: string
           imagem_url: string | null
+          lucro_subtotal: number | null
           margem: number | null
+          periodo_locacao_meses: number | null
           preco_unitario: number
           product_id: string | null
           proposal_id: string
           quantidade: number
           total: number
           unidade: string | null
+          valor_unitario: number | null
         }
         Insert: {
           codigo?: string | null
+          comissao_percentual?: number | null
           created_at?: string
+          custo_unitario?: number | null
           desconto?: number | null
           descricao: string
           estoque?: number | null
+          fornecedor_id?: string | null
           id?: string
           imagem_url?: string | null
+          lucro_subtotal?: number | null
           margem?: number | null
+          periodo_locacao_meses?: number | null
           preco_unitario: number
           product_id?: string | null
           proposal_id: string
           quantidade: number
           total: number
           unidade?: string | null
+          valor_unitario?: number | null
         }
         Update: {
           codigo?: string | null
+          comissao_percentual?: number | null
           created_at?: string
+          custo_unitario?: number | null
           desconto?: number | null
           descricao?: string
           estoque?: number | null
+          fornecedor_id?: string | null
           id?: string
           imagem_url?: string | null
+          lucro_subtotal?: number | null
           margem?: number | null
+          periodo_locacao_meses?: number | null
           preco_unitario?: number
           product_id?: string | null
           proposal_id?: string
           quantidade?: number
           total?: number
           unidade?: string | null
+          valor_unitario?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "proposal_items_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "proposal_items_product_id_fkey"
             columns: ["product_id"]
@@ -929,18 +975,22 @@ export type Database = {
           codigo: string
           condicoes_comerciais: Json | null
           created_at: string
+          custo_total: number | null
           data_proposta: string
           desconto_total: number | null
           despesas_adicionais: number | null
           id: string
           introducao: string | null
           link_publico: string | null
+          lucro_total: number | null
+          margem_percentual_total: number | null
           modelo_id: string | null
           motivo_revisao: string | null
           observacoes_internas: string | null
           oportunidade_id: string | null
           pdf_url: string | null
           status: string
+          tipo_operacao: Database["public"]["Enums"]["tipo_operacao"] | null
           token_publico: string | null
           total_geral: number
           total_itens: number
@@ -955,18 +1005,22 @@ export type Database = {
           codigo: string
           condicoes_comerciais?: Json | null
           created_at?: string
+          custo_total?: number | null
           data_proposta?: string
           desconto_total?: number | null
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
           link_publico?: string | null
+          lucro_total?: number | null
+          margem_percentual_total?: number | null
           modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
           pdf_url?: string | null
           status?: string
+          tipo_operacao?: Database["public"]["Enums"]["tipo_operacao"] | null
           token_publico?: string | null
           total_geral?: number
           total_itens?: number
@@ -981,18 +1035,22 @@ export type Database = {
           codigo?: string
           condicoes_comerciais?: Json | null
           created_at?: string
+          custo_total?: number | null
           data_proposta?: string
           desconto_total?: number | null
           despesas_adicionais?: number | null
           id?: string
           introducao?: string | null
           link_publico?: string | null
+          lucro_total?: number | null
+          margem_percentual_total?: number | null
           modelo_id?: string | null
           motivo_revisao?: string | null
           observacoes_internas?: string | null
           oportunidade_id?: string | null
           pdf_url?: string | null
           status?: string
+          tipo_operacao?: Database["public"]["Enums"]["tipo_operacao"] | null
           token_publico?: string | null
           total_geral?: number
           total_itens?: number
@@ -1265,6 +1323,12 @@ export type Database = {
         | "perdida"
         | "devolvida"
       signer_type: "locador" | "locatario" | "testemunha"
+      tipo_disponibilidade: "venda" | "locacao" | "ambos"
+      tipo_operacao:
+        | "venda_direta"
+        | "venda_agenciada"
+        | "locacao_direta"
+        | "locacao_agenciada"
       user_role: "admin" | "comercial" | "revendedor" | "financeiro"
     }
     CompositeTypes: {
@@ -1413,6 +1477,13 @@ export const Constants = {
         "devolvida",
       ],
       signer_type: ["locador", "locatario", "testemunha"],
+      tipo_disponibilidade: ["venda", "locacao", "ambos"],
+      tipo_operacao: [
+        "venda_direta",
+        "venda_agenciada",
+        "locacao_direta",
+        "locacao_agenciada",
+      ],
       user_role: ["admin", "comercial", "revendedor", "financeiro"],
     },
   },

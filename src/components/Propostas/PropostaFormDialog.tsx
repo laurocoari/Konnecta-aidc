@@ -12,6 +12,9 @@ import { Plus, Trash2, Search, Calculator } from "lucide-react";
 import SimuladorROI from "@/components/Financeiro/SimuladorROI";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { TipoOperacaoSelector } from "./TipoOperacaoSelector";
+import { FinancialSummaryPanel } from "./FinancialSummaryPanel";
+import { useProposalCalculations, calcularCustoLocacaoDireta, calcularValorComMargem } from "@/hooks/useProposalCalculations";
 
 interface PropostaFormDialogProps {
   open: boolean;
@@ -23,16 +26,22 @@ interface PropostaFormDialogProps {
 interface ProposalItem {
   id?: string;
   product_id?: string;
+  fornecedor_id?: string;
   descricao: string;
   codigo: string;
   unidade: string;
   quantidade: number;
-  preco_unitario: number;
+  custo_unitario: number;
+  valor_unitario: number;
+  preco_unitario: number; // mantido para compatibilidade
+  comissao_percentual?: number;
+  periodo_locacao_meses?: number;
   desconto: number;
   total: number;
   margem?: number;
   estoque?: number;
   imagem_url?: string;
+  vida_util_meses?: number;
 }
 
 export default function PropostaFormDialog({
@@ -44,6 +53,7 @@ export default function PropostaFormDialog({
   const [loading, setLoading] = useState(false);
   const [clientes, setClientes] = useState<any[]>([]);
   const [produtos, setProdutos] = useState<any[]>([]);
+  const [fornecedores, setFornecedores] = useState<any[]>([]);
   const [modelos, setModelos] = useState<any[]>([]);
   const [searchProduto, setSearchProduto] = useState("");
   const [items, setItems] = useState<ProposalItem[]>([]);
@@ -51,6 +61,7 @@ export default function PropostaFormDialog({
   const [formData, setFormData] = useState({
     modelo_id: "",
     cliente_id: "",
+    tipo_operacao: "venda_direta" as 'venda_direta' | 'venda_agenciada' | 'locacao_direta' | 'locacao_agenciada',
     data_proposta: new Date().toISOString().split('T')[0],
     validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     introducao: "Prezados, segue proposta comercial conforme especificações abaixo.",
@@ -71,6 +82,7 @@ export default function PropostaFormDialog({
     if (open) {
       loadClientes();
       loadProdutos();
+      loadFornecedores();
       loadModelos();
       if (proposta) {
         loadPropostaData();
@@ -103,6 +115,20 @@ export default function PropostaFormDialog({
       return;
     }
     setProdutos(data || []);
+  };
+
+  const loadFornecedores = async () => {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("*")
+      .eq("status", "ativo")
+      .order("nome");
+    
+    if (error) {
+      toast.error("Erro ao carregar fornecedores");
+      return;
+    }
+    setFornecedores(data || []);
   };
 
   const loadModelos = async () => {
@@ -155,6 +181,7 @@ export default function PropostaFormDialog({
     setFormData({
       modelo_id: proposta.modelo_id || "",
       cliente_id: proposta.cliente_id,
+      tipo_operacao: proposta.tipo_operacao || "venda_direta",
       data_proposta: proposta.data_proposta,
       validade: proposta.validade,
       introducao: proposta.introducao,
@@ -174,8 +201,36 @@ export default function PropostaFormDialog({
 
   const addProduto = (produto: any) => {
     const custoMedio = produto.custo_medio || 0;
-    const precoUnitario = produto.valor_venda || 0;
-    const margem = custoMedio > 0 ? ((precoUnitario - custoMedio) / custoMedio) * 100 : 0;
+    const isLocacao = formData.tipo_operacao.includes('locacao');
+    
+    let valorUnitario = 0;
+    let custoUnitario = custoMedio;
+    
+    if (isLocacao) {
+      // Para locação direta: usar valor de locação ou calcular
+      if (formData.tipo_operacao === 'locacao_direta') {
+        valorUnitario = produto.valor_locacao || 0;
+        custoUnitario = calcularCustoLocacaoDireta(custoMedio, produto.vida_util_meses || 36);
+      } else {
+        // Para locação agenciada: aguardar input do usuário
+        valorUnitario = 0;
+        custoUnitario = 0;
+      }
+    } else {
+      // Para venda direta: usar valor de venda
+      if (formData.tipo_operacao === 'venda_direta') {
+        valorUnitario = produto.valor_venda || 0;
+        if (produto.margem_lucro_venda) {
+          valorUnitario = calcularValorComMargem(custoMedio, produto.margem_lucro_venda);
+        }
+      } else {
+        // Para venda agenciada: aguardar input do usuário
+        valorUnitario = 0;
+        custoUnitario = 0;
+      }
+    }
+
+    const margem = custoUnitario > 0 ? ((valorUnitario - custoUnitario) / custoUnitario) * 100 : 0;
 
     const newItem: ProposalItem = {
       product_id: produto.id,
@@ -183,12 +238,17 @@ export default function PropostaFormDialog({
       codigo: produto.codigo,
       unidade: produto.unidade || "un",
       quantidade: 1,
-      preco_unitario: precoUnitario,
+      custo_unitario: custoUnitario,
+      valor_unitario: valorUnitario,
+      preco_unitario: valorUnitario, // compatibilidade
+      comissao_percentual: produto.comissao_agenciamento_padrao || 0,
+      periodo_locacao_meses: isLocacao ? 12 : undefined,
       desconto: 0,
-      total: precoUnitario,
+      total: valorUnitario,
       margem: parseFloat(margem.toFixed(2)),
       estoque: produto.estoque_atual,
       imagem_url: produto.imagem_principal,
+      vida_util_meses: produto.vida_util_meses || 36,
     };
 
     setItems([...items, newItem]);
@@ -200,11 +260,20 @@ export default function PropostaFormDialog({
     newItems[index] = { ...newItems[index], [field]: value };
 
     // Recalcular total
-    if (field === "quantidade" || field === "preco_unitario" || field === "desconto") {
+    if (field === "quantidade" || field === "valor_unitario" || field === "custo_unitario" || field === "desconto" || field === "periodo_locacao_meses" || field === "comissao_percentual") {
       const item = newItems[index];
-      const subtotal = item.quantidade * item.preco_unitario;
+      const isLocacao = formData.tipo_operacao.includes('locacao');
+      const periodo = isLocacao ? (item.periodo_locacao_meses || 1) : 1;
+      
+      const subtotal = item.quantidade * item.valor_unitario * periodo;
       const desconto = (subtotal * item.desconto) / 100;
       item.total = subtotal - desconto;
+      item.preco_unitario = item.valor_unitario; // manter compatibilidade
+      
+      // Recalcular margem
+      if (item.custo_unitario > 0) {
+        item.margem = ((item.valor_unitario - item.custo_unitario) / item.custo_unitario) * 100;
+      }
     }
 
     setItems(newItems);
@@ -244,13 +313,47 @@ export default function PropostaFormDialog({
       return;
     }
 
+    // Validar fornecedor para operações agenciadas
+    if (formData.tipo_operacao.includes('agenciada')) {
+      const temFornecedor = items.every(item => item.fornecedor_id);
+      if (!temFornecedor) {
+        toast.error("Selecione o fornecedor para todos os itens em operações agenciadas");
+        return;
+      }
+    }
+
+    // Validar período para locações
+    if (formData.tipo_operacao.includes('locacao')) {
+      const temPeriodo = items.every(item => item.periodo_locacao_meses && item.periodo_locacao_meses > 0);
+      if (!temPeriodo) {
+        toast.error("Defina o período de locação para todos os itens");
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const { totalItens, totalGeral } = calcularTotais();
+      // Calcular totais usando o hook
+      const calculations = useProposalCalculations(items.map(item => ({
+        product_id: item.product_id!,
+        fornecedor_id: item.fornecedor_id,
+        quantidade: item.quantidade,
+        custo_unitario: item.custo_unitario,
+        valor_unitario: item.valor_unitario,
+        comissao_percentual: item.comissao_percentual,
+        periodo_locacao_meses: item.periodo_locacao_meses,
+      })), formData.tipo_operacao);
+
+      const totalItens = calculations.valor_total;
+      const custoTotal = calculations.custo_total;
+      const lucroTotal = calculations.lucro_total;
+      const margemTotal = calculations.margem_percentual;
+      const totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
+
       const codigo = proposta?.codigo || await gerarCodigo();
 
       const proposalData = {
@@ -259,12 +362,16 @@ export default function PropostaFormDialog({
         modelo_id: formData.modelo_id || null,
         cliente_id: formData.cliente_id,
         vendedor_id: user.id,
+        tipo_operacao: formData.tipo_operacao,
         data_proposta: formData.data_proposta,
         validade: formData.validade,
         introducao: formData.introducao,
         condicoes_comerciais: formData.condicoes_comerciais,
         observacoes_internas: formData.observacoes_internas,
         total_itens: totalItens,
+        custo_total: custoTotal,
+        lucro_total: lucroTotal,
+        margem_percentual_total: margemTotal,
         desconto_total: formData.desconto_total,
         despesas_adicionais: formData.despesas_adicionais,
         total_geral: totalGeral,
@@ -300,7 +407,23 @@ export default function PropostaFormDialog({
       // Inserir novos itens
       const itemsData = items.map(item => ({
         proposal_id: proposalId,
-        ...item,
+        product_id: item.product_id,
+        fornecedor_id: item.fornecedor_id,
+        descricao: item.descricao,
+        codigo: item.codigo,
+        unidade: item.unidade,
+        quantidade: item.quantidade,
+        custo_unitario: item.custo_unitario,
+        valor_unitario: item.valor_unitario,
+        preco_unitario: item.valor_unitario, // compatibilidade
+        comissao_percentual: item.comissao_percentual,
+        periodo_locacao_meses: item.periodo_locacao_meses,
+        desconto: item.desconto,
+        total: item.total,
+        margem: item.margem,
+        estoque: item.estoque,
+        imagem_url: item.imagem_url,
+        lucro_subtotal: (item.valor_unitario - item.custo_unitario) * item.quantidade * (item.periodo_locacao_meses || 1),
       }));
 
       const { error: itemsError } = await supabase
@@ -320,10 +443,31 @@ export default function PropostaFormDialog({
   };
 
   const { totalItens, totalGeral } = calcularTotais();
-  const filteredProdutos = produtos.filter(p =>
-    p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
-    p.codigo.toLowerCase().includes(searchProduto.toLowerCase())
-  );
+  
+  // Calcular usando o hook
+  const calculations = useProposalCalculations(items.map(item => ({
+    product_id: item.product_id!,
+    fornecedor_id: item.fornecedor_id,
+    quantidade: item.quantidade,
+    custo_unitario: item.custo_unitario,
+    valor_unitario: item.valor_unitario,
+    comissao_percentual: item.comissao_percentual,
+    periodo_locacao_meses: item.periodo_locacao_meses,
+  })), formData.tipo_operacao);
+  
+  const filteredProdutos = produtos.filter(p => {
+    const matchesSearch = p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(searchProduto.toLowerCase());
+    
+    // Filtrar por tipo de disponibilidade
+    if (formData.tipo_operacao === 'venda_direta') {
+      return matchesSearch && (p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos');
+    } else if (formData.tipo_operacao === 'locacao_direta') {
+      return matchesSearch && (p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos');
+    }
+    
+    return matchesSearch;
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -349,6 +493,12 @@ export default function PropostaFormDialog({
 
             <ScrollArea className="h-[60vh] pr-4">
               <TabsContent value="cabecalho" className="space-y-4">
+                <TipoOperacaoSelector
+                  value={formData.tipo_operacao}
+                  onChange={(tipo) => setFormData({ ...formData, tipo_operacao: tipo })}
+                  disabled={loading}
+                />
+
                 <div>
                   <Label>Selecionar Modelo (Opcional)</Label>
                   <Select
@@ -464,6 +614,13 @@ export default function PropostaFormDialog({
               </TabsContent>
 
               <TabsContent value="itens" className="space-y-4">
+                <FinancialSummaryPanel
+                  valorTotal={calculations.valor_total}
+                  custoTotal={calculations.custo_total}
+                  lucroTotal={calculations.lucro_total}
+                  margemPercentual={calculations.margem_percentual}
+                />
+
                 <Card className="p-4">
                   <div className="flex gap-2 mb-4">
                     <div className="relative flex-1">
@@ -514,76 +671,144 @@ export default function PropostaFormDialog({
                 </Card>
 
                 <div className="space-y-2">
-                  {items.map((item, index) => (
-                    <Card key={index} className="p-4">
-                      <div className="grid gap-4 md:grid-cols-6">
-                        <div className="md:col-span-2">
-                          <Label>Descrição</Label>
-                          <Input
-                            value={item.descricao}
-                            onChange={(e) =>
-                              updateItem(index, "descricao", e.target.value)
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label>Quantidade</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            value={item.quantidade}
-                            onChange={(e) =>
-                              updateItem(index, "quantidade", parseInt(e.target.value))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label>Preço Unit.</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={item.preco_unitario}
-                            onChange={(e) =>
-                              updateItem(index, "preco_unitario", parseFloat(e.target.value))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label>Desc. (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={item.desconto}
-                            onChange={(e) =>
-                              updateItem(index, "desconto", parseFloat(e.target.value))
-                            }
-                          />
-                        </div>
-                        <div className="flex items-end gap-2">
-                          <div className="flex-1">
-                            <Label>Total</Label>
-                            <Input
-                              value={`R$ ${item.total.toFixed(2)}`}
-                              disabled
-                            />
+                  {items.map((item, index) => {
+                    const isAgenciada = formData.tipo_operacao.includes('agenciada');
+                    const isLocacao = formData.tipo_operacao.includes('locacao');
+                    
+                    return (
+                      <Card key={index} className="p-4">
+                        <div className="space-y-4">
+                          {/* Linha 1: Descrição e Fornecedor (se agenciada) */}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <Label>Descrição</Label>
+                              <Input
+                                value={item.descricao}
+                                onChange={(e) =>
+                                  updateItem(index, "descricao", e.target.value)
+                                }
+                              />
+                            </div>
+                            {isAgenciada && (
+                              <div>
+                                <Label>Fornecedor *</Label>
+                                <Select
+                                  value={item.fornecedor_id}
+                                  onValueChange={(value) =>
+                                    updateItem(index, "fornecedor_id", value)
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Selecione o fornecedor" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {fornecedores.map((fornecedor) => (
+                                      <SelectItem key={fornecedor.id} value={fornecedor.id}>
+                                        {fornecedor.nome}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
                           </div>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => removeItem(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+
+                          {/* Linha 2: Campos numéricos */}
+                          <div className="grid gap-4 md:grid-cols-5">
+                            <div>
+                              <Label>Quantidade</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={item.quantidade}
+                                onChange={(e) =>
+                                  updateItem(index, "quantidade", parseInt(e.target.value))
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Custo Unit.</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={item.custo_unitario}
+                                onChange={(e) =>
+                                  updateItem(index, "custo_unitario", parseFloat(e.target.value))
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Valor Unit.</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={item.valor_unitario}
+                                onChange={(e) =>
+                                  updateItem(index, "valor_unitario", parseFloat(e.target.value))
+                                }
+                              />
+                            </div>
+                            {isAgenciada && (
+                              <div>
+                                <Label>Comissão (%)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={item.comissao_percentual || 0}
+                                  onChange={(e) =>
+                                    updateItem(index, "comissao_percentual", parseFloat(e.target.value))
+                                  }
+                                />
+                              </div>
+                            )}
+                            {isLocacao && (
+                              <div>
+                                <Label>Período (meses) *</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.periodo_locacao_meses || 12}
+                                  onChange={(e) =>
+                                    updateItem(index, "periodo_locacao_meses", parseInt(e.target.value))
+                                  }
+                                />
+                              </div>
+                            )}
+                            <div className="flex items-end gap-2">
+                              <div className="flex-1">
+                                <Label>Total</Label>
+                                <Input
+                                  value={`R$ ${item.total.toFixed(2)}`}
+                                  disabled
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="icon"
+                                onClick={() => removeItem(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Informações adicionais */}
+                          <div className="flex gap-4 text-xs text-muted-foreground">
+                            {item.margem !== undefined && (
+                              <span>Margem: {item.margem.toFixed(2)}%</span>
+                            )}
+                            {item.estoque !== undefined && !isAgenciada && (
+                              <span>Estoque: {item.estoque}</span>
+                            )}
+                            {isLocacao && item.periodo_locacao_meses && (
+                              <span>Total do Período: R$ {(item.valor_unitario * item.quantidade * item.periodo_locacao_meses).toFixed(2)}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      {item.margem !== undefined && (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Margem: {item.margem.toFixed(2)}% | Estoque: {item.estoque}
-                        </p>
-                      )}
-                    </Card>
-                  ))}
+                      </Card>
+                    );
+                  })}
                 </div>
               </TabsContent>
 
