@@ -15,27 +15,29 @@ Deno.serve(async (req) => {
 
   try {
     // Criar cliente Supabase com service role para bypass RLS
-    // No Supabase Edge Functions, as variáveis de ambiente são diferentes
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || 
-                       Deno.env.get("SUPABASE_SERVICE_URL") || 
-                       "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || 
-                              Deno.env.get("SUPABASE_ANON_KEY") || 
-                              "";
+    // No Supabase Edge Functions, as variáveis são fornecidas automaticamente
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error("Variáveis de ambiente não configuradas:", {
-        SUPABASE_URL: !!supabaseUrl,
-        SUPABASE_SERVICE_ROLE_KEY: !!supabaseServiceKey,
+        SUPABASE_URL: supabaseUrl || "NÃO ENCONTRADO",
+        SUPABASE_SERVICE_ROLE_KEY: supabaseServiceKey ? "ENCONTRADO" : "NÃO ENCONTRADO",
+        todas_envs: Object.keys(Deno.env.toObject()).filter(k => k.includes("SUPABASE")),
       });
       return new Response(
-        JSON.stringify({ error: "Configuração do servidor incompleta" }),
+        JSON.stringify({ 
+          success: false,
+          error: "Configuração do servidor incompleta. Verifique as variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY." 
+        }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
     }
+    
+    console.log("Criando cliente Supabase com URL:", supabaseUrl.substring(0, 30) + "...");
     
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
@@ -49,7 +51,10 @@ Deno.serve(async (req) => {
 
     if (!user_id || !email) {
       return new Response(
-        JSON.stringify({ error: "user_id e email são obrigatórios" }),
+        JSON.stringify({ 
+          success: false,
+          error: "user_id e email são obrigatórios" 
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -57,28 +62,96 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Inserir registro de parceiro
-    const { data, error } = await supabaseAdmin
-      .from("partners")
-      .insert({
-        user_id,
-        nome_fantasia,
-        razao_social,
-        cnpj: cnpj?.replace(/\D/g, "") || null,
-        email,
-        telefone,
-        cidade,
-        estado: estado?.toUpperCase() || null,
-        approval_status: "pendente",
-        status: "inativo",
-      })
-      .select()
-      .single();
+    // Tentar inserir registro de parceiro com retry logic
+    // O usuário pode não estar disponível imediatamente após criação no auth
+    const maxRetries = 5;
+    const retryDelay = 1000; // 1 segundo base
+    let data = null;
+    let error = null;
+    let success = false;
 
-    if (error) {
+    const partnerData = {
+      user_id,
+      nome_fantasia,
+      razao_social,
+      cnpj: cnpj?.replace(/\D/g, "") || null,
+      email,
+      telefone,
+      cidade,
+      estado: estado?.toUpperCase() || null,
+      approval_status: "pendente",
+      status: "inativo",
+    };
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const result = await supabaseAdmin
+        .from("partners")
+        .insert(partnerData)
+        .select()
+        .single();
+
+      data = result.data;
+      error = result.error;
+
+      if (!error) {
+        success = true;
+        console.log(`Parceiro criado com sucesso na tentativa ${attempt}/${maxRetries}`);
+        break;
+      }
+
+      // Se for erro de foreign key, aguardar e tentar novamente
+      if (error.code === '23503' || error.message?.includes('foreign key')) {
+        if (attempt < maxRetries) {
+          const delay = retryDelay * attempt; // Delay progressivo: 1s, 2s, 3s, 4s
+          console.log(`Tentativa ${attempt}/${maxRetries}: Usuário ainda não disponível, aguardando ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        } else {
+          // Última tentativa falhou
+          console.error("Usuário não encontrado após todas as tentativas:", user_id);
+          return new Response(
+            JSON.stringify({ 
+              success: false,
+              error: "Usuário ainda não está disponível no sistema. Por favor, aguarde alguns segundos e tente novamente.",
+              code: error.code,
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+
+      // Outros erros: não tentar novamente
+      break;
+    }
+
+    if (!success && error) {
       console.error("Erro ao criar parceiro:", error);
+      console.error("Detalhes do erro:", JSON.stringify(error, null, 2));
+
+      // Erro de CNPJ duplicado
+      if (error.code === '23505' || error.message?.includes('unique constraint') || error.message?.includes('duplicate')) {
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: "Já existe um parceiro cadastrado com este CNPJ.",
+            code: error.code,
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
       return new Response(
-        JSON.stringify({ error: error.message, details: error }),
+        JSON.stringify({ 
+          success: false,
+          error: error.message || "Erro ao criar registro de parceiro", 
+          code: error.code,
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -86,6 +159,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log("Parceiro criado com sucesso:", data?.id);
+    
     return new Response(
       JSON.stringify({ success: true, data }),
       {

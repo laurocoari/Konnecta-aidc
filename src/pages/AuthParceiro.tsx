@@ -109,43 +109,35 @@ export default function AuthParceiro() {
 
       logger.info("AUTH", `Usuário criado: ${authData.user.email} (${authData.user.id})`);
 
-      // Verificar se há sessão na resposta do signUp ou obter uma nova
-      let session = authData.session;
-      
-      if (!session) {
-        // Tentar obter a sessão atual
-        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          logger.warn("AUTH", "Erro ao obter sessão", sessionError);
-        } else {
-          session = currentSession;
-        }
-      }
+      // Criar parceiro via Edge Function
+      // A Edge Function tem retry logic interno para aguardar propagação do usuário
+      logger.info("AUTH", "Criando registro de parceiro via Edge Function...");
 
-      // Criar registro de parceiro via função SQL (bypass RLS)
-      logger.info("AUTH", "Criando registro de parceiro via função SQL");
-
-      const { data: partnerData, error: partnerError } = await supabase.rpc(
-        "create_partner",
+      const result = await supabase.functions.invoke(
+        "create-partner",
         {
-          p_user_id: authData.user.id,
-          p_nome_fantasia: nomeFantasia,
-          p_razao_social: razaoSocial,
-          p_cnpj: cnpj,
-          p_email: email,
-          p_telefone: telefone,
-          p_cidade: cidade,
-          p_estado: estado,
+          body: {
+            user_id: authData.user.id,
+            nome_fantasia: nomeFantasia,
+            razao_social: razaoSocial,
+            cnpj: cnpj,
+            email: email,
+            telefone: telefone,
+            cidade: cidade,
+            estado: estado,
+          },
         }
       );
 
+      const partnerData = result.data;
+      const partnerError = result.error;
+
+      // Tratar erros
       if (partnerError) {
-        logger.error("DB", "Erro ao criar registro de parceiro via função SQL", partnerError);
+        logger.error("DB", "Erro ao criar registro de parceiro via Edge Function", partnerError);
         logger.error("DB", "Detalhes do erro", {
           message: partnerError.message,
-          code: partnerError.code,
-          details: partnerError.details,
+          context: partnerError.context,
         });
         
         toast.error(
@@ -156,11 +148,11 @@ export default function AuthParceiro() {
         return;
       }
 
-      // Verificar se a função retornou sucesso
-      if (partnerData && !partnerData.success) {
-        logger.error("DB", "Função SQL retornou erro", partnerData);
+      // Verificar se a Edge Function retornou sucesso
+      if (!partnerData || !partnerData.success) {
+        logger.error("DB", "Edge Function retornou erro", partnerData);
         toast.error(
-          partnerData.error || "Erro ao criar registro de parceiro.",
+          partnerData?.error || "Erro ao criar registro de parceiro. Por favor, aguarde alguns segundos e tente novamente.",
           { duration: 6000 }
         );
         setLoading(false);
@@ -168,7 +160,7 @@ export default function AuthParceiro() {
       }
       
       // Sucesso
-      logger.info("DB", "Registro de parceiro criado com sucesso via função SQL", partnerData);
+      logger.info("DB", "Registro de parceiro criado com sucesso via Edge Function", partnerData);
 
       // Sucesso - resetar loading e mostrar mensagem
       setLoading(false);
