@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { UserCheck } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 export default function AuthParceiro() {
   const navigate = useNavigate();
@@ -68,6 +69,8 @@ export default function AuthParceiro() {
 
     try {
       // Criar usuário no auth
+      // Em desenvolvimento, não enviamos email de confirmação automaticamente
+      // O email será enviado apenas quando o admin aprovar o parceiro
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -76,12 +79,24 @@ export default function AuthParceiro() {
             full_name: fullName,
             role: "revendedor",
           },
-          emailRedirectTo: `${window.location.origin}/auth/parceiro?approved=true`,
+          // Removido emailRedirectTo para evitar envio automático de email
+          // O email será enviado apenas na aprovação pelo admin
         },
       });
 
       if (authError) {
-        toast.error(authError.message);
+        logger.error("AUTH", "Erro ao criar usuário", authError);
+        
+        // Tratar erro de rate limit especificamente
+        if (authError.status === 429 || authError.message?.includes("rate limit")) {
+          toast.error(
+            "Muitas tentativas de cadastro. Aguarde alguns minutos antes de tentar novamente.",
+            { duration: 5000 }
+          );
+        } else {
+          toast.error(authError.message || "Erro ao criar conta");
+        }
+        
         setLoading(false);
         return;
       }
@@ -92,39 +107,102 @@ export default function AuthParceiro() {
         return;
       }
 
-      // Criar registro na tabela partners com status pendente
-      const { error: partnerError } = await supabase
-        .from("partners")
-        .insert({
-          user_id: authData.user.id,
-          nome_fantasia: nomeFantasia,
-          razao_social: razaoSocial,
-          cnpj: cnpj.replace(/\D/g, ""),
-          email: email,
-          telefone: telefone,
-          cidade: cidade,
-          estado: estado.toUpperCase(),
-          approval_status: "pendente",
-          status: "inativo", // Inativo até ser aprovado
-        });
+      logger.info("AUTH", `Usuário criado: ${authData.user.email} (${authData.user.id})`);
+
+      // Verificar se há sessão na resposta do signUp ou obter uma nova
+      let session = authData.session;
+      
+      if (!session) {
+        // Tentar obter a sessão atual
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          logger.warn("AUTH", "Erro ao obter sessão", sessionError);
+        } else {
+          session = currentSession;
+        }
+      }
+
+      // Criar registro de parceiro via função SQL (bypass RLS)
+      logger.info("AUTH", "Criando registro de parceiro via função SQL");
+
+      const { data: partnerData, error: partnerError } = await supabase.rpc(
+        "create_partner",
+        {
+          p_user_id: authData.user.id,
+          p_nome_fantasia: nomeFantasia,
+          p_razao_social: razaoSocial,
+          p_cnpj: cnpj,
+          p_email: email,
+          p_telefone: telefone,
+          p_cidade: cidade,
+          p_estado: estado,
+        }
+      );
 
       if (partnerError) {
-        logger.error("DB", "Erro ao criar registro de parceiro", partnerError);
-        toast.error(partnerError.message || "Erro ao criar registro de parceiro");
-        // Nota: O usuário foi criado no auth mas não será deletado automaticamente
-        // Um admin pode deletar manualmente se necessário
+        logger.error("DB", "Erro ao criar registro de parceiro via função SQL", partnerError);
+        logger.error("DB", "Detalhes do erro", {
+          message: partnerError.message,
+          code: partnerError.code,
+          details: partnerError.details,
+        });
+        
+        toast.error(
+          partnerError.message || "Erro ao criar registro de parceiro. Tente novamente ou entre em contato com o suporte.",
+          { duration: 6000 }
+        );
         setLoading(false);
         return;
       }
 
+      // Verificar se a função retornou sucesso
+      if (partnerData && !partnerData.success) {
+        logger.error("DB", "Função SQL retornou erro", partnerData);
+        toast.error(
+          partnerData.error || "Erro ao criar registro de parceiro.",
+          { duration: 6000 }
+        );
+        setLoading(false);
+        return;
+      }
+      
+      // Sucesso
+      logger.info("DB", "Registro de parceiro criado com sucesso via função SQL", partnerData);
+
+      // Sucesso - resetar loading e mostrar mensagem
+      setLoading(false);
+      
+      logger.info("DB", "Registro de parceiro criado com sucesso");
+
+      // Limpar formulário primeiro
+      e.currentTarget.reset();
+      
+      // Mostrar mensagem de sucesso
       toast.success(
-        "Cadastro realizado com sucesso! Aguarde a aprovação do administrador. Você receberá um email quando sua conta for aprovada."
+        "✅ Cadastro realizado com sucesso!",
+        { 
+          duration: 4000,
+          description: "Aguarde a aprovação do administrador. Você receberá um email quando sua conta for aprovada.",
+        }
       );
       
-      // Limpar formulário
-      e.currentTarget.reset();
+      // Aguardar um pouco para o usuário ver a mensagem antes de redirecionar
+      setTimeout(() => {
+        navigate("/auth/parceiro?tab=login", { replace: true });
+      }, 3000);
     } catch (error: any) {
-      toast.error(error.message || "Erro ao criar conta");
+      logger.error("AUTH", "Erro inesperado no cadastro", error);
+      
+      // Tratar erro de rate limit também no catch
+      if (error?.status === 429 || error?.message?.includes("rate limit")) {
+        toast.error(
+          "Muitas tentativas de cadastro. Aguarde alguns minutos antes de tentar novamente.",
+          { duration: 5000 }
+        );
+      } else {
+        toast.error(error.message || "Erro ao criar conta");
+      }
     }
 
     setLoading(false);

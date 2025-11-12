@@ -16,6 +16,7 @@ interface LogEntry {
 class Logger {
   private isDevelopment = import.meta.env.DEV;
   private isProduction = import.meta.env.PROD;
+  private isBrowser = typeof window !== 'undefined';
 
   private formatTimestamp(): string {
     return new Date().toISOString();
@@ -29,6 +30,14 @@ class Logger {
       error: '❌',
     }[entry.level];
 
+    const timestamp = entry.timestamp.split('T')[1].split('.')[0];
+
+    // No navegador, usar formatação CSS ao invés de ANSI
+    if (this.isBrowser) {
+      return `${emoji} [${timestamp}] [${entry.category}] ${entry.message}`;
+    }
+
+    // No terminal, usar códigos ANSI
     const color = {
       debug: '\x1b[36m', // Cyan
       info: '\x1b[32m', // Green
@@ -37,9 +46,17 @@ class Logger {
     }[entry.level];
 
     const reset = '\x1b[0m';
-    const timestamp = entry.timestamp.split('T')[1].split('.')[0];
-
     return `${color}${emoji} [${timestamp}] [${entry.category}]${reset} ${entry.message}`;
+  }
+
+  private getBrowserStyle(level: LogLevel): string {
+    const styles = {
+      debug: 'color: #06b6d4; font-weight: normal;',
+      info: 'color: #10b981; font-weight: normal;',
+      warn: 'color: #f59e0b; font-weight: bold;',
+      error: 'color: #ef4444; font-weight: bold;',
+    };
+    return styles[level];
   }
 
   private log(level: LogLevel, category: string, message: string, data?: any) {
@@ -55,24 +72,56 @@ class Logger {
       data,
     };
 
-    const formatted = this.formatLog(entry);
+    const timestamp = entry.timestamp.split('T')[1].split('.')[0];
+    const emoji = {
+      debug: '🔍',
+      info: 'ℹ️',
+      warn: '⚠️',
+      error: '❌',
+    }[entry.level];
 
-    switch (level) {
-      case 'debug':
-        console.debug(formatted, data || '');
-        break;
-      case 'info':
-        console.info(formatted, data || '');
-        break;
-      case 'warn':
-        console.warn(formatted, data || '');
-        break;
-      case 'error':
-        console.error(formatted, data || '');
-        if (data) {
-          console.error('Stack:', data.stack || '');
-        }
-        break;
+    if (this.isBrowser) {
+      // No navegador, usar formatação com CSS
+      const style = this.getBrowserStyle(level);
+      const prefix = `%c${emoji} [${timestamp}] [${category}]`;
+      
+      switch (level) {
+        case 'debug':
+          console.debug(prefix, style, message, data || '');
+          break;
+        case 'info':
+          console.info(prefix, style, message, data || '');
+          break;
+        case 'warn':
+          console.warn(prefix, style, message, data || '');
+          break;
+        case 'error':
+          console.error(prefix, style, message, data || '');
+          if (data && data.stack) {
+            console.error('%cStack:', 'color: #ef4444; font-weight: bold;', data.stack);
+          }
+          break;
+      }
+    } else {
+      // No terminal, usar formatação ANSI
+      const formatted = this.formatLog(entry);
+      switch (level) {
+        case 'debug':
+          console.debug(formatted, data || '');
+          break;
+        case 'info':
+          console.info(formatted, data || '');
+          break;
+        case 'warn':
+          console.warn(formatted, data || '');
+          break;
+        case 'error':
+          console.error(formatted, data || '');
+          if (data) {
+            console.error('Stack:', data.stack || '');
+          }
+          break;
+      }
     }
   }
 
