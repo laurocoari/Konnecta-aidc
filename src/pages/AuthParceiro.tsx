@@ -59,23 +59,72 @@ export default function AuthParceiro() {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
     const fullName = formData.get("fullName") as string;
+    const nomeFantasia = formData.get("nomeFantasia") as string;
+    const razaoSocial = formData.get("razaoSocial") as string;
+    const cnpj = formData.get("cnpj") as string;
+    const telefone = formData.get("telefone") as string;
+    const cidade = formData.get("cidade") as string;
+    const estado = formData.get("estado") as string;
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          role: "revendedor",
+    try {
+      // Criar usuário no auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: "revendedor",
+          },
+          emailRedirectTo: `${window.location.origin}/auth/parceiro?approved=true`,
         },
-        emailRedirectTo: `${window.location.origin}/central-parceiro`,
-      },
-    });
+      });
 
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Conta criada! Você será redirecionado...");
+      if (authError) {
+        toast.error(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!authData.user) {
+        toast.error("Erro ao criar conta");
+        setLoading(false);
+        return;
+      }
+
+      // Criar registro na tabela partners com status pendente
+      const { error: partnerError } = await supabase
+        .from("partners")
+        .insert({
+          user_id: authData.user.id,
+          nome_fantasia: nomeFantasia,
+          razao_social: razaoSocial,
+          cnpj: cnpj.replace(/\D/g, ""),
+          email: email,
+          telefone: telefone,
+          cidade: cidade,
+          estado: estado.toUpperCase(),
+          approval_status: "pendente",
+          status: "inativo", // Inativo até ser aprovado
+        });
+
+      if (partnerError) {
+        logger.error("DB", "Erro ao criar registro de parceiro", partnerError);
+        toast.error(partnerError.message || "Erro ao criar registro de parceiro");
+        // Nota: O usuário foi criado no auth mas não será deletado automaticamente
+        // Um admin pode deletar manualmente se necessário
+        setLoading(false);
+        return;
+      }
+
+      toast.success(
+        "Cadastro realizado com sucesso! Aguarde a aprovação do administrador. Você receberá um email quando sua conta for aprovada."
+      );
+      
+      // Limpar formulário
+      e.currentTarget.reset();
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar conta");
     }
 
     setLoading(false);
@@ -133,7 +182,7 @@ export default function AuthParceiro() {
                 <Input
                   id="signup-name"
                   name="fullName"
-                  placeholder="Seu nome"
+                  placeholder="Seu nome completo"
                   required
                 />
               </div>
@@ -158,8 +207,69 @@ export default function AuthParceiro() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-nome-fantasia">Nome Fantasia</Label>
+                <Input
+                  id="signup-nome-fantasia"
+                  name="nomeFantasia"
+                  placeholder="Nome da sua empresa"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-razao-social">Razão Social</Label>
+                <Input
+                  id="signup-razao-social"
+                  name="razaoSocial"
+                  placeholder="Razão social da empresa"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-cnpj">CNPJ</Label>
+                <Input
+                  id="signup-cnpj"
+                  name="cnpj"
+                  placeholder="00.000.000/0000-00"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-telefone">Telefone</Label>
+                  <Input
+                    id="signup-telefone"
+                    name="telefone"
+                    placeholder="(00) 00000-0000"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-estado">Estado</Label>
+                  <Input
+                    id="signup-estado"
+                    name="estado"
+                    placeholder="SP"
+                    maxLength={2}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-cidade">Cidade</Label>
+                <Input
+                  id="signup-cidade"
+                  name="cidade"
+                  placeholder="Sua cidade"
+                  required
+                />
+              </div>
+              <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                <p className="font-medium mb-1">⚠️ Atenção</p>
+                <p>Seu cadastro será analisado pela equipe Konnecta. Você receberá um email quando sua conta for aprovada.</p>
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Criando conta..." : "Criar Conta de Parceiro"}
+                {loading ? "Criando conta..." : "Solicitar Cadastro como Parceiro"}
               </Button>
             </form>
           </TabsContent>

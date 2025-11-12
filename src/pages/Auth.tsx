@@ -59,13 +59,13 @@ export default function Auth() {
     const password = formData.get("password") as string;
     const fullName = formData.get("fullName") as string;
 
-    const { error } = await supabase.auth.signUp({
+    const { data: authData, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
-          role: "revendedor",
+          role: "admin", // Assumindo que Auth.tsx é para admin
         },
         emailRedirectTo: `${window.location.origin}/dashboard`,
       },
@@ -74,6 +74,20 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
+      // Enviar email de boas-vindas para admin
+      if (authData.user) {
+        try {
+          await supabase.functions.invoke("send-welcome-email", {
+            body: {
+              type: "admin_welcome",
+              email: email,
+              fullName: fullName,
+            },
+          });
+        } catch (emailErr) {
+          console.warn("Erro ao enviar email de boas-vindas:", emailErr);
+        }
+      }
       toast.success("Conta criada! Você será redirecionado...");
     }
 

@@ -13,6 +13,10 @@ import ROIChart from "./ROIChart";
 interface SimuladorROIProps {
   propostaId?: string;
   investimentoInicial?: number;
+  valorVenda?: number;
+  lucroTotal?: number;
+  margemPercentual?: number;
+  tipoOperacao?: 'venda_direta' | 'venda_agenciada' | 'locacao_direta' | 'locacao_agenciada';
   modo?: 'inline' | 'standalone';
   onSalvar?: (simulacao: any) => void;
 }
@@ -20,6 +24,10 @@ interface SimuladorROIProps {
 export default function SimuladorROI({
   propostaId,
   investimentoInicial = 0,
+  valorVenda = 0,
+  lucroTotal = 0,
+  margemPercentual = 0,
+  tipoOperacao = 'locacao_direta',
   modo = 'standalone',
   onSalvar,
 }: SimuladorROIProps) {
@@ -40,6 +48,31 @@ export default function SimuladorROI({
     }
   }, [investimentoInicial]);
 
+  // Calcular ROI para venda direta
+  const calcularROIVendaDireta = () => {
+    if (investimentoInicial <= 0 || valorVenda <= 0) {
+      return null;
+    }
+
+    const lucro = lucroTotal || (valorVenda - investimentoInicial);
+    const roi_percentual = investimentoInicial > 0 
+      ? (lucro / investimentoInicial) * 100 
+      : 0;
+    const margem = margemPercentual || (investimentoInicial > 0 
+      ? (lucro / investimentoInicial) * 100 
+      : 0);
+
+    return {
+      investimento_total: investimentoInicial,
+      valor_venda: valorVenda,
+      lucro_total: lucro,
+      roi_percentual: roi_percentual,
+      margem_percentual: margem,
+      tipo: 'venda_direta',
+    };
+  };
+
+  // Calcular ROI para locação
   const calcularResultados = () => {
     const {
       investimento_total,
@@ -67,10 +100,13 @@ export default function SimuladorROI({
       lucro_total_contrato,
       rentabilidade_percentual,
       meses_apos_roi,
+      tipo: 'locacao',
     };
   };
 
-  const resultados = calcularResultados();
+  // Escolher qual cálculo usar baseado no tipo de operação
+  const isVendaDireta = tipoOperacao === 'venda_direta' || tipoOperacao === 'venda_agenciada';
+  const resultados = isVendaDireta ? calcularROIVendaDireta() : calcularResultados();
 
   const handleSalvar = async () => {
     if (!resultados) {
@@ -86,7 +122,14 @@ export default function SimuladorROI({
 
       const simulacaoData = {
         proposal_id: propostaId || null,
-        ...formData,
+        tipo_operacao: tipoOperacao,
+        ...(isVendaDireta ? {
+          investimento_total: investimentoInicial,
+          valor_venda: valorVenda,
+          lucro_total: lucroTotal,
+          roi_percentual: resultados.roi_percentual,
+          margem_percentual: margemPercentual,
+        } : formData),
         ...resultados,
         created_by: user.id,
       };
@@ -132,12 +175,103 @@ export default function SimuladorROI({
 
   return (
     <div className="space-y-6">
-      {/* Formulário de Entrada */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Calculator className="h-5 w-5 text-primary" />
-          <h3 className="text-lg font-semibold">Dados da Simulação</h3>
-        </div>
+      {isVendaDireta ? (
+        // MODO VENDA DIRETA - Cálculo simplificado de lucratividade
+        <>
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <Calculator className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Análise de Lucratividade - Venda Direta</h3>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="bg-background/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">💰 Investimento (Custo Total)</p>
+                <p className="text-2xl font-bold">{formatCurrency(investimentoInicial)}</p>
+              </div>
+
+              <div className="bg-background/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">💵 Valor da Venda</p>
+                <p className="text-2xl font-bold text-blue-600">{formatCurrency(valorVenda)}</p>
+              </div>
+
+              <div className="bg-background/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">📈 Lucro Bruto</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatCurrency(lucroTotal || (valorVenda - investimentoInicial))}
+                </p>
+              </div>
+
+              <div className="bg-background/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">🎯 Margem de Lucro</p>
+                <p className={`text-2xl font-bold ${
+                  margemPercentual >= 30 ? 'text-green-600' : 
+                  margemPercentual >= 20 ? 'text-blue-600' : 'text-orange-600'
+                }`}>
+                  {margemPercentual.toFixed(2)}%
+                </p>
+              </div>
+            </div>
+
+            {resultados && (
+              <div className="mt-6 p-4 bg-primary/10 rounded-lg border border-primary/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">ROI (Retorno sobre Investimento)</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {resultados.roi_percentual.toFixed(2)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Para cada R$ 100 investidos, você terá R$ {resultados.roi_percentual.toFixed(2)} de lucro
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">Lucro Total</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatCurrency(resultados.lucro_total)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Opcional: Campos para salvar simulação */}
+          <Card className="p-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>Nome da Simulação (Opcional)</Label>
+                <Input
+                  value={formData.nome_simulacao}
+                  onChange={(e) =>
+                    setFormData({ ...formData, nome_simulacao: e.target.value })
+                  }
+                  placeholder="Ex: Venda Direta - Cliente ABC"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label>Observações (Opcional)</Label>
+                <Textarea
+                  value={formData.observacoes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, observacoes: e.target.value })
+                  }
+                  placeholder="Notas sobre esta venda..."
+                  rows={2}
+                />
+              </div>
+            </div>
+          </Card>
+        </>
+      ) : (
+        // MODO LOCAÇÃO - Cálculo existente
+        <>
+          {/* Formulário de Entrada */}
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <Calculator className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Dados da Simulação</h3>
+            </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div>
@@ -243,7 +377,7 @@ export default function SimuladorROI({
             </Alert>
           )}
 
-          {resultados.rentabilidade_percentual < 20 && formData.prazo_roi_meses <= formData.duracao_contrato_meses && (
+          {!isVendaDireta && resultados.rentabilidade_percentual < 20 && formData.prazo_roi_meses <= formData.duracao_contrato_meses && (
             <Alert>
               <TrendingUp className="h-4 w-4" />
               <AlertDescription>
@@ -251,79 +385,92 @@ export default function SimuladorROI({
               </AlertDescription>
             </Alert>
           )}
+          
+          {isVendaDireta && resultados.margem_percentual < 20 && (
+            <Alert>
+              <TrendingUp className="h-4 w-4" />
+              <AlertDescription>
+                💡 Margem de lucro abaixo de 20%. Considere ajustar os valores para melhorar a rentabilidade da venda.
+              </AlertDescription>
+            </Alert>
+          )}
         </>
       )}
 
-      {/* Resultados */}
-      {resultados && (
-        <Card className="p-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
-          <div className="flex items-center gap-3 mb-6">
-            <DollarSign className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-semibold">Resultados da Simulação</h3>
-          </div>
+          {/* Resultados - Apenas para Locação */}
+          {resultados && !isVendaDireta && (
+            <Card className="p-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+              <div className="flex items-center gap-3 mb-6">
+                <DollarSign className="h-5 w-5 text-primary" />
+                <h3 className="text-lg font-semibold">Resultados da Simulação</h3>
+              </div>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">💰 Investimento Total</p>
-              <p className="text-2xl font-bold">{formatCurrency(formData.investimento_total)}</p>
-            </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">💰 Investimento Total</p>
+                  <p className="text-2xl font-bold">{formatCurrency(formData.investimento_total)}</p>
+                </div>
 
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">📆 ROI Alcançado em</p>
-              <p className="text-2xl font-bold">{formData.prazo_roi_meses} meses</p>
-            </div>
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">📆 ROI Alcançado em</p>
+                  <p className="text-2xl font-bold">{formData.prazo_roi_meses} meses</p>
+                </div>
 
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">📈 Retorno Mensal Necessário</p>
-              <p className="text-2xl font-bold">{formatCurrency(resultados.retorno_mensal)}</p>
-            </div>
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">📈 Retorno Mensal Necessário</p>
+                  <p className="text-2xl font-bold">{formatCurrency(resultados.retorno_mensal || 0)}</p>
+                </div>
 
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">💵 Lucro Mensal Após ROI</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(resultados.lucro_apos_roi)}
-              </p>
-            </div>
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">💵 Lucro Mensal Após ROI</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency(resultados.lucro_apos_roi || 0)}
+                  </p>
+                </div>
 
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">🎯 Lucro Total no Período</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(resultados.lucro_total_contrato)}
-              </p>
-            </div>
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">🎯 Lucro Total no Período</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency(resultados.lucro_total_contrato || 0)}
+                  </p>
+                </div>
 
-            <div className="bg-background/50 p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-1">📊 Rentabilidade Total</p>
-              <p className={`text-2xl font-bold ${
-                resultados.rentabilidade_percentual >= 20 ? 'text-green-600' : 'text-orange-600'
-              }`}>
-                {resultados.rentabilidade_percentual.toFixed(2)}%
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
+                <div className="bg-background/50 p-4 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">📊 Rentabilidade Total</p>
+                  <p className={`text-2xl font-bold ${
+                    (resultados.rentabilidade_percentual || 0) >= 20 ? 'text-green-600' : 'text-orange-600'
+                  }`}>
+                    {(resultados.rentabilidade_percentual || 0).toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
 
-      {/* Gráfico */}
-      {resultados && formData.prazo_roi_meses <= formData.duracao_contrato_meses && (
-        <ROIChart
-          investimentoTotal={formData.investimento_total}
-          prazoROI={formData.prazo_roi_meses}
-          duracaoContrato={formData.duracao_contrato_meses}
-          retornoMensal={resultados.retorno_mensal}
-          lucroAposROI={resultados.lucro_apos_roi}
-        />
+          {/* Gráfico - Apenas para Locação */}
+          {resultados && !isVendaDireta && formData.prazo_roi_meses <= formData.duracao_contrato_meses && (
+            <ROIChart
+              investimentoTotal={formData.investimento_total}
+              prazoROI={formData.prazo_roi_meses}
+              duracaoContrato={formData.duracao_contrato_meses}
+              retornoMensal={resultados.retorno_mensal || 0}
+              lucroAposROI={resultados.lucro_apos_roi || 0}
+            />
+          )}
+        </>
       )}
 
       {/* Ações */}
       <div className="flex justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleLimpar}
-        >
-          Limpar
-        </Button>
+        {!isVendaDireta && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleLimpar}
+          >
+            Limpar
+          </Button>
+        )}
         <Button
           type="button"
           onClick={handleSalvar}

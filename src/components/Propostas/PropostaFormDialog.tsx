@@ -1457,7 +1457,11 @@ export default function PropostaFormDialog({
               <TabsContent value="roi" className="space-y-4">
                 <SimuladorROI
                   propostaId={proposta?.id}
-                  investimentoInicial={totalGeral}
+                  investimentoInicial={calculations.custo_total}
+                  valorVenda={calculations.valor_total}
+                  lucroTotal={calculations.lucro_total}
+                  margemPercentual={calculations.margem_percentual}
+                  tipoOperacao={formData.tipo_operacao}
                   modo="inline"
                 />
               </TabsContent>

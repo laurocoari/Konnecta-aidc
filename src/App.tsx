@@ -22,6 +22,8 @@ import Configuracoes from "./pages/Configuracoes";
 import Auth from "./pages/Auth";
 import AuthParceiro from "./pages/AuthParceiro";
 import CentralParceiro from "./pages/CentralParceiro";
+import CatalogoProdutos from "./pages/CatalogoProdutos";
+import AprovarParceiros from "./pages/AprovarParceiros";
 import GerenciarOportunidades from "./pages/GerenciarOportunidades";
 import NotFound from "./pages/NotFound";
 import Index from "./pages/Index";
@@ -77,6 +79,8 @@ const App = () => {
                         <Route path="/financeiro" element={<Financeiro />} />
                         <Route path="/configuracoes" element={<Configuracoes />} />
                         <Route path="/central-parceiro" element={<CentralParceiro />} />
+                        <Route path="/catalogo-produtos" element={<CatalogoProdutos />} />
+                        <Route path="/aprovar-parceiros" element={<AprovarParceiros />} />
                         <Route path="/gerenciar-oportunidades" element={<GerenciarOportunidades />} />
                         <Route path="*" element={<NotFound />} />
                       </Routes>

@@ -26,6 +26,7 @@ const adminNavigation = [
   { name: "Modelos", href: "/modelos", icon: FileStack, roles: ["admin"] },
   { name: "Fornecedores", href: "/fornecedores", icon: Building2, roles: ["admin", "comercial"] },
   { name: "Revendedores", href: "/revendedores", icon: UserCheck, roles: ["admin", "comercial"] },
+  { name: "Aprovar Parceiros", href: "/aprovar-parceiros", icon: UserCheck, roles: ["admin"] },
   { name: "Gerenciar Oportunidades", href: "/gerenciar-oportunidades", icon: ClipboardCheck, roles: ["admin", "comercial"] },
   { name: "Financeiro", href: "/financeiro", icon: DollarSign, roles: ["admin", "financeiro"] },
   { name: "Configurações", href: "/configuracoes", icon: Settings, roles: ["admin", "comercial", "financeiro"] },

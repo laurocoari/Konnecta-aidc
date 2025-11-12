@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ const statusColors = {
 
 export default function CentralParceiro() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checkingCNPJ, setCheckingCNPJ] = useState(false);
@@ -73,6 +75,10 @@ export default function CentralParceiro() {
       toast.error("Erro ao carregar dados do parceiro");
     } else if (!data) {
       toast.error("Você não está cadastrado como parceiro. Entre em contato com o administrador.");
+    } else if (data.approval_status === 'pendente') {
+      toast.warning("Seu cadastro está aguardando aprovação. Você receberá um email quando for aprovado.");
+    } else if (data.approval_status === 'rejeitado') {
+      toast.error("Seu cadastro foi rejeitado. Entre em contato com o administrador.");
     } else {
       setPartner(data);
     }
@@ -549,6 +555,10 @@ export default function CentralParceiro() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
+          <TabsTrigger value="catalog" onClick={() => navigate("/catalogo-produtos")}>
+            <Package className="h-4 w-4 mr-2" />
+            Catálogo de Produtos
+          </TabsTrigger>
           <TabsTrigger value="opportunities">
             <FileText className="h-4 w-4 mr-2" />
             Oportunidades
