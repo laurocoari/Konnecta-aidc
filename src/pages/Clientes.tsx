@@ -12,10 +12,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ClienteFormDialog } from "@/components/Clientes/ClienteFormDialog";
-import { Search, Phone, Mail, Building2, Eye } from "lucide-react";
+import { ExportButton } from "@/components/ExportButton";
+import { Search, Phone, Mail, Building2, Eye, Edit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { ExcelColumn } from "@/lib/excelExport";
 
 const statusColors = {
   ativo: "success",
@@ -27,6 +29,7 @@ export default function Clientes() {
   const [searchTerm, setSearchTerm] = useState("");
   const [clientes, setClientes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingCliente, setEditingCliente] = useState<any>(null);
 
   useEffect(() => {
     loadClientes();
@@ -114,7 +117,35 @@ export default function Clientes() {
             Gerencie sua base de clientes e prospects
           </p>
         </div>
-        <ClienteFormDialog onSuccess={loadClientes} />
+        <div className="flex gap-2">
+          <ExportButton
+            filename="clientes"
+            title="Relatório de Clientes"
+            columns={[
+              { header: "Nome", key: "nome", width: 30 },
+              { header: "CNPJ", key: "cnpj", width: 18 },
+              { header: "Contato Principal", key: "contato_principal", width: 25 },
+              { header: "Email", key: "email", width: 30 },
+              { header: "Telefone", key: "telefone", width: 15 },
+              { header: "Cidade", key: "cidade", width: 20 },
+              { header: "Estado", key: "estado", width: 10 },
+              { header: "CEP", key: "cep", width: 12 },
+              { header: "Tipo", key: "tipo", width: 12 },
+            ]}
+            data={filteredClientes.map((c) => ({
+              nome: c.nome,
+              cnpj: c.cnpj,
+              contato_principal: c.contato_principal,
+              email: c.email,
+              telefone: c.telefone,
+              cidade: c.cidade,
+              estado: c.estado,
+              cep: c.cep,
+              tipo: c.tipo || "cliente",
+            }))}
+          />
+          <ClienteFormDialog cliente={editingCliente} onSuccess={() => { loadClientes(); setEditingCliente(null); }} />
+        </div>
       </div>
 
       <Card className="glass-strong p-6">
@@ -186,10 +217,21 @@ export default function Clientes() {
                     <Badge variant="outline">{cliente.tipo || "cliente"}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" className="gap-2">
-                      <Eye className="h-4 w-4" />
-                      Ver Detalhes
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingCliente(cliente)}
+                        className="gap-2"
+                      >
+                        <Edit className="h-4 w-4" />
+                        Editar
+                      </Button>
+                      <Button variant="ghost" size="sm" className="gap-2">
+                        <Eye className="h-4 w-4" />
+                        Ver Detalhes
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

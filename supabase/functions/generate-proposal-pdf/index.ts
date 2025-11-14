@@ -1,9 +1,10 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.0";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 interface ProposalData {
@@ -60,8 +61,7 @@ function generateHTML(data: ProposalData): string {
     `;
   }).join('');
 
-  const condicoesHTML = data.condicoes_comerciais?.texto || 
-    'Condições comerciais a serem definidas conforme negociação.';
+  // Condições comerciais serão renderizadas diretamente no HTML
 
   return `
 <!DOCTYPE html>
@@ -273,10 +273,25 @@ function generateHTML(data: ProposalData): string {
           <td>Despesas Adicionais:</td>
           <td style="text-align: right;">${formatCurrency(data.despesas_adicionais || 0)}</td>
         </tr>
+        ${data.condicoes_comerciais?.tipo === "parcelado" && data.condicoes_comerciais?.acrescimo_percentual > 0 ? `
+        <tr>
+          <td>Acréscimo (${data.condicoes_comerciais.acrescimo_percentual}%):</td>
+          <td style="text-align: right; color: #ea580c;">+${formatCurrency(
+            ((data.total_itens - data.desconto_total + data.despesas_adicionais) * 
+             data.condicoes_comerciais.acrescimo_percentual) / 100
+          )}</td>
+        </tr>
+        ` : ''}
         <tr class="total-row">
           <td>TOTAL GERAL:</td>
           <td style="text-align: right;">${formatCurrency(data.total_geral)}</td>
         </tr>
+        ${data.condicoes_comerciais?.tipo === "parcelado" && data.condicoes_comerciais?.parcelas > 1 ? `
+        <tr style="background: #dcfce7 !important; border-top: 2px solid #16a34a;">
+          <td style="font-weight: bold; color: #16a34a;">Valor da Parcela (${data.condicoes_comerciais.parcelas}x):</td>
+          <td style="text-align: right; font-weight: bold; color: #16a34a; font-size: 11pt;">${formatCurrency(data.total_geral / data.condicoes_comerciais.parcelas)}</td>
+        </tr>
+        ` : ''}
       </table>
     </div>
   </div>
@@ -284,7 +299,33 @@ function generateHTML(data: ProposalData): string {
   <div class="section" style="clear: both;">
     <div class="section-title">CONDIÇÕES COMERCIAIS</div>
     <div class="conditions">
-${condicoesHTML}
+      ${data.condicoes_comerciais?.tipo ? `
+        <p><strong>Tipo de Pagamento:</strong> ${
+          data.condicoes_comerciais.tipo === "avista" ? "À Vista" :
+          data.condicoes_comerciais.tipo === "parcelado" ? "Parcelado" :
+          "Nenhuma"
+        }</p>
+      ` : ''}
+      ${data.condicoes_comerciais?.tipo === "parcelado" && data.condicoes_comerciais?.parcelas > 1 ? `
+        <p><strong>Parcelas:</strong> ${data.condicoes_comerciais.parcelas}x de ${formatCurrency(data.total_geral / data.condicoes_comerciais.parcelas)}</p>
+      ` : ''}
+      ${data.condicoes_comerciais?.forma_pagamento ? `
+        <p><strong>Forma de Pagamento:</strong> ${data.condicoes_comerciais.forma_pagamento}</p>
+      ` : ''}
+      ${data.condicoes_comerciais?.prazo_entrega ? `
+        <p><strong>Prazo de Entrega:</strong> ${data.condicoes_comerciais.prazo_entrega}</p>
+      ` : ''}
+      ${data.condicoes_comerciais?.garantia ? `
+        <p><strong>Garantia:</strong> ${data.condicoes_comerciais.garantia}</p>
+      ` : ''}
+      ${data.condicoes_comerciais?.texto ? `
+        <p style="margin-top: 10px;">${data.condicoes_comerciais.texto}</p>
+      ` : ''}
+      ${!data.condicoes_comerciais?.texto && 
+        !data.condicoes_comerciais?.tipo && 
+        !data.condicoes_comerciais?.forma_pagamento ? `
+        <p>Condições comerciais a serem definidas conforme negociação.</p>
+      ` : ''}
     </div>
   </div>
 
@@ -302,17 +343,34 @@ ${condicoesHTML}
   `;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  // This is needed if you're planning to invoke your function from a browser.
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias');
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
-    const { proposalId } = await req.json();
+    const body = await req.json();
+    const { proposalId } = body;
+    
+    if (!proposalId) {
+      throw new Error('proposalId é obrigatório');
+    }
 
     console.log('Generating PDF for proposal:', proposalId);
 
@@ -362,8 +420,8 @@ serve(async (req) => {
     // Gerar token se não existir
     let token = proposal.token_publico;
     if (!token) {
-      const { data: tokenData } = await supabase.rpc('generate_proposal_token');
-      token = tokenData;
+      // Gerar token aleatório se a função RPC não existir
+      token = crypto.randomUUID();
     }
 
     // Atualizar proposta com token

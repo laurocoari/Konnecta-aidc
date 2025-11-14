@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download, Share2, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
@@ -75,6 +75,9 @@ export function PropostaPreviewDialog({
           <DialogTitle>
             Proposta Comercial {codigo} - Versão {versao}
           </DialogTitle>
+          <DialogDescription>
+            Visualize e gere o PDF da proposta comercial
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex gap-2 mb-4">

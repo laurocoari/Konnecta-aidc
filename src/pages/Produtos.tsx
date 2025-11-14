@@ -30,11 +30,13 @@ import {
   Download,
   Upload,
   Zap,
+  FileText,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ProdutoFormDialog } from "@/components/Produtos/ProdutoFormDialog";
 import { ImportacaoProdutosDialog } from "@/components/Produtos/ImportacaoProdutosDialog";
+import { CotacaoProdutoDialog } from "@/components/Cotacoes/CotacaoProdutoDialog";
 import { importUrovoProducts } from "@/utils/importUrovoProducts";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -53,11 +55,29 @@ export default function Produtos() {
   const [lowStockAlerts, setLowStockAlerts] = useState<any[]>([]);
   const [openImportDialog, setOpenImportDialog] = useState(false);
   const [importingUrovo, setImportingUrovo] = useState(false);
+  const [cotacaoDialogOpen, setCotacaoDialogOpen] = useState(false);
+  const [selectedProductForCotacao, setSelectedProductForCotacao] = useState<any>(null);
+  const [purchasePrices, setPurchasePrices] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadProducts();
     checkLowStock();
   }, []);
+
+  // Recarregar produtos quando voltar para a página (para atualizar estoque)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadProducts();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  useEffect(() => {
+    if (products.length > 0) {
+      loadPurchasePrices();
+    }
+  }, [products]);
 
   useEffect(() => {
     filterAndSortProducts();
@@ -65,18 +85,132 @@ export default function Produtos() {
 
   const loadProducts = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
+    try {
+      // Carregar produtos primeiro (sempre funciona)
+      const { data: productsData, error: productsError } = await supabase
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (error) {
+      if (productsError) {
+        throw productsError;
+      }
+
+      if (!productsData || productsData.length === 0) {
+        setProducts([]);
+        setLoading(false);
+        return;
+      }
+
+      // Tentar carregar códigos de fornecedor separadamente (pode não existir ainda)
+      // Dividir em lotes menores para evitar URLs muito longas
+      try {
+        const productIds = productsData.map((p: any) => p.id);
+        
+        // Processar em lotes de 20 produtos por vez para evitar URLs muito longas
+        const batchSize = 20;
+        const codesMap = new Map();
+        
+        for (let i = 0; i < productIds.length; i += batchSize) {
+          const batch = productIds.slice(i, i + batchSize);
+          
+          const { data: supplierCodesData, error: supplierCodesError } = await supabase
+            .from("product_supplier_codes")
+            .select(`
+              product_id,
+              codigo_fornecedor,
+              codigo_principal,
+              supplier:suppliers(id, nome)
+            `)
+            .in("product_id", batch)
+            .eq("codigo_principal", true);
+
+          // Se erro 404 ou tabela não existe, ignorar silenciosamente
+          if (supplierCodesError) {
+            // Erro 404 significa que a tabela não existe ou não está acessível
+            if (supplierCodesError.code === "PGRST116" || supplierCodesError.status === 404) {
+              // Tabela não existe ou não acessível, continuar sem códigos de fornecedor
+              break;
+            }
+            // Outros erros: logar apenas em desenvolvimento
+            if (import.meta.env.DEV) {
+              console.warn("Erro ao carregar códigos de fornecedor:", supplierCodesError);
+            }
+            break;
+          }
+
+          // Processar dados recebidos
+          if (supplierCodesData) {
+            supplierCodesData.forEach((sc: any) => {
+              codesMap.set(sc.product_id, {
+                codigo_fornecedor: sc.codigo_fornecedor,
+                supplier: sc.supplier,
+              });
+            });
+          }
+        }
+
+        // Processar produtos com códigos de fornecedor
+        const processedProducts = productsData.map((product: any) => {
+          const supplierCode = codesMap.get(product.id);
+          return {
+            ...product,
+            codigo_fornecedor_principal: supplierCode?.codigo_fornecedor || product.codigo || null,
+            supplier_principal: supplierCode?.supplier || null,
+          };
+        });
+
+        setProducts(processedProducts);
+      } catch (supplierCodesError: any) {
+        // Se não conseguir carregar supplier_codes, usar apenas código do produto
+        // Não logar erros esperados (404, tabela não existe)
+        if (supplierCodesError?.code !== "PGRST116" && supplierCodesError?.status !== 404) {
+          if (import.meta.env.DEV) {
+            console.warn("Não foi possível carregar códigos de fornecedor:", supplierCodesError);
+          }
+        }
+        const processedProducts = productsData.map((product: any) => ({
+          ...product,
+          codigo_fornecedor_principal: product.codigo || null,
+          supplier_principal: null,
+        }));
+        setProducts(processedProducts);
+      }
+    } catch (error: any) {
       console.error("Error loading products:", error);
-      toast.error("Erro ao carregar produtos");
-    } else {
-      setProducts(data || []);
+      toast.error("Erro ao carregar produtos: " + (error.message || "Erro desconhecido"));
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const loadPurchasePrices = async () => {
+    if (products.length === 0) return;
+    
+    try {
+      const productIds = products.map((p) => p.id);
+      const prices: Record<string, number> = {};
+
+      // Carregar preços em paralelo para melhor performance
+      const pricePromises = productIds.map(async (productId) => {
+        const { data } = await supabase.rpc("get_lowest_purchase_price", {
+          p_product_id: productId,
+        });
+        return { productId, price: data };
+      });
+
+      const results = await Promise.all(pricePromises);
+      results.forEach(({ productId, price }) => {
+        if (price) {
+          prices[productId] = price;
+        }
+      });
+
+      setPurchasePrices(prices);
+    } catch (error) {
+      console.error("Error loading purchase prices:", error);
+    }
   };
 
   const checkLowStock = async () => {
@@ -98,7 +232,9 @@ export default function Produtos() {
       filtered = filtered.filter(
         (p) =>
           p.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.sku_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           p.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.codigo_fornecedor_principal?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           p.ncm?.includes(searchTerm) ||
           p.categoria?.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -161,6 +297,11 @@ export default function Produtos() {
   const handleEdit = (product: any) => {
     setEditingProduct(product);
     setOpenDialog(true);
+  };
+
+  const handleViewCotações = (product: any) => {
+    setSelectedProductForCotacao(product);
+    setCotacaoDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
@@ -331,9 +472,14 @@ export default function Produtos() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[80px]">Foto</TableHead>
+                  <TableHead className="cursor-pointer" onClick={() => handleSort("sku_interno")}>
+                    <div className="flex items-center gap-1">
+                      SKU Interno <ArrowUpDown className="h-3 w-3" />
+                    </div>
+                  </TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort("codigo")}>
                     <div className="flex items-center gap-1">
-                      Código <ArrowUpDown className="h-3 w-3" />
+                      Código Fornecedor <ArrowUpDown className="h-3 w-3" />
                     </div>
                   </TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort("nome")}>
@@ -349,6 +495,7 @@ export default function Produtos() {
                     </div>
                   </TableHead>
                   <TableHead className="text-right">Mínimo</TableHead>
+                  <TableHead className="text-right">Preço Compra</TableHead>
                   <TableHead className="text-right">Custo</TableHead>
                   <TableHead className="text-right">Venda</TableHead>
                   <TableHead>NCM</TableHead>
@@ -360,13 +507,13 @@ export default function Produtos() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8">
+                    <TableCell colSpan={15} className="text-center py-8">
                       Carregando produtos...
                     </TableCell>
                   </TableRow>
                 ) : filteredProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={15} className="text-center py-8 text-muted-foreground">
                       Nenhum produto encontrado
                     </TableCell>
                   </TableRow>
@@ -382,7 +529,19 @@ export default function Produtos() {
                             className="w-12 h-12 object-cover rounded"
                           />
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
+                        <TableCell className="font-mono text-sm font-semibold text-primary">
+                          {product.sku_interno || "N/A"}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          <div className="flex flex-col">
+                            <span>{product.codigo_fornecedor_principal || product.codigo || "N/A"}</span>
+                            {product.supplier_principal && (
+                              <span className="text-xs text-muted-foreground">
+                                {product.supplier_principal.nome}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="font-medium">{product.nome}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{product.categoria}</Badge>
@@ -393,6 +552,35 @@ export default function Produtos() {
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {product.estoque_minimo}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {purchasePrices[product.id] ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="font-semibold text-success">
+                                R$ {purchasePrices[product.id].toLocaleString("pt-BR", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => handleViewCotações(product)}
+                                title="Ver cotações"
+                              >
+                                <FileText className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-xs"
+                              onClick={() => handleViewCotações(product)}
+                            >
+                              Cotar
+                            </Button>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {product.custo_medio
@@ -473,6 +661,21 @@ export default function Produtos() {
           toast.success("Produtos importados com sucesso!");
         }}
       />
+
+      {selectedProductForCotacao && (
+        <CotacaoProdutoDialog
+          open={cotacaoDialogOpen}
+          onOpenChange={(open) => {
+            setCotacaoDialogOpen(open);
+            if (!open) {
+              setSelectedProductForCotacao(null);
+              loadPurchasePrices();
+            }
+          }}
+          productId={selectedProductForCotacao.id}
+          productName={selectedProductForCotacao.nome}
+        />
+      )}
     </div>
   );
 }

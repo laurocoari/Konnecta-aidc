@@ -46,15 +46,11 @@ export function SafeImage({
         alt={alt}
         className={cn(className, isLoading && "opacity-0")}
         onError={(e) => {
-          const target = e.target as HTMLImageElement;
           setHasError(true);
           setIsLoading(false);
           
-          // Log do erro apenas em desenvolvimento
-          if (import.meta.env.DEV) {
-            console.warn(`[SafeImage] Erro ao carregar imagem: ${src}`);
-          }
-          
+          // Erros de imagem são tratados silenciosamente pelo componente
+          // O fallback será exibido automaticamente
           if (onError) {
             onError();
           }

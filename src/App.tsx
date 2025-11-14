@@ -25,6 +25,17 @@ import CentralParceiro from "./pages/CentralParceiro";
 import CatalogoProdutos from "./pages/CatalogoProdutos";
 import AprovarParceiros from "./pages/AprovarParceiros";
 import GerenciarOportunidades from "./pages/GerenciarOportunidades";
+import CotacoesCompras from "./pages/CotacoesCompras";
+import CRMVendas from "./pages/CRMVendas";
+import PedidosCompra from "./pages/PedidosCompra";
+import CentralSuporte from "./pages/CentralSuporte";
+import Tarefas from "./pages/Tarefas";
+import Estoque from "./pages/Estoque";
+import ContasReceber from "./pages/ContasReceber";
+import ContasPagar from "./pages/ContasPagar";
+import Comissoes from "./pages/Comissoes";
+import ContasBancarias from "./pages/ContasBancarias";
+import PedidosVenda from "./pages/PedidosVenda";
 import NotFound from "./pages/NotFound";
 import Index from "./pages/Index";
 import { logger } from "@/lib/logger";
@@ -82,6 +93,17 @@ const App = () => {
                         <Route path="/catalogo-produtos" element={<CatalogoProdutos />} />
                         <Route path="/aprovar-parceiros" element={<AprovarParceiros />} />
                         <Route path="/gerenciar-oportunidades" element={<GerenciarOportunidades />} />
+                        <Route path="/cotacoes-compras" element={<CotacoesCompras />} />
+                        <Route path="/crm-vendas" element={<CRMVendas />} />
+                        <Route path="/pedidos-compra" element={<PedidosCompra />} />
+                        <Route path="/central-suporte" element={<CentralSuporte />} />
+                        <Route path="/tarefas" element={<Tarefas />} />
+                        <Route path="/estoque" element={<Estoque />} />
+                        <Route path="/contas-receber" element={<ContasReceber />} />
+                        <Route path="/contas-pagar" element={<ContasPagar />} />
+                        <Route path="/comissoes" element={<Comissoes />} />
+                        <Route path="/contas-bancarias" element={<ContasBancarias />} />
+                        <Route path="/pedidos-venda" element={<PedidosVenda />} />
                         <Route path="*" element={<NotFound />} />
                       </Routes>
                     </main>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,7 @@ interface PropostaFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   proposta?: any;
-  onSuccess: () => void;
+  onSuccess: (salesOrderCreated?: any) => void;
 }
 
 interface ProposalItem {
@@ -74,12 +74,17 @@ export default function PropostaFormDialog({
     desconto_total: 0,
     despesas_adicionais: 0,
     status: "rascunho",
+    gerar_contas_receber: false,
     condicoes_comerciais: {
       tipo: "nenhuma",
       parcelas: 1,
+      acrescimo_percentual: 0,
       forma_pagamento: "",
       prazo_entrega: "",
       garantia: "",
+      prazo_locacao_meses: 12,
+      prazo_inicio_contrato: "",
+      prazo_fim_contrato: "",
     },
   });
 
@@ -107,12 +112,17 @@ export default function PropostaFormDialog({
           desconto_total: 0,
           despesas_adicionais: 0,
           status: "rascunho",
+          gerar_contas_receber: false,
           condicoes_comerciais: {
             tipo: "nenhuma",
             parcelas: 1,
+            acrescimo_percentual: 0,
             forma_pagamento: "",
             prazo_entrega: "",
             garantia: "",
+            prazo_locacao_meses: 12,
+            prazo_inicio_contrato: "",
+            prazo_fim_contrato: "",
           },
         });
         setItems([]);
@@ -421,6 +431,7 @@ export default function PropostaFormDialog({
 
       // Carregar dados do formulário
       const clienteId = propostaData?.cliente_id || proposta.cliente_id;
+      const condicoesComerciais = propostaData?.condicoes_comerciais || proposta.condicoes_comerciais || {};
       setFormData({
         modelo_id: propostaData?.modelo_id || proposta.modelo_id || "",
         cliente_id: clienteId,
@@ -433,12 +444,17 @@ export default function PropostaFormDialog({
         desconto_total: propostaData?.desconto_total || proposta.desconto_total || 0,
         despesas_adicionais: propostaData?.despesas_adicionais || proposta.despesas_adicionais || 0,
         status: propostaData?.status || proposta.status,
-        condicoes_comerciais: propostaData?.condicoes_comerciais || proposta.condicoes_comerciais || {
-          tipo: "nenhuma",
-          parcelas: 1,
-          forma_pagamento: "",
-          prazo_entrega: "",
-          garantia: "",
+        gerar_contas_receber: false, // Sempre false ao carregar, pois é uma ação de criação
+        condicoes_comerciais: {
+          tipo: condicoesComerciais.tipo || "nenhuma",
+          parcelas: condicoesComerciais.parcelas || 1,
+          acrescimo_percentual: condicoesComerciais.acrescimo_percentual || 0,
+          forma_pagamento: condicoesComerciais.forma_pagamento || "",
+          prazo_entrega: condicoesComerciais.prazo_entrega || "",
+          garantia: condicoesComerciais.garantia || "",
+          prazo_locacao_meses: condicoesComerciais.prazo_locacao_meses || 12,
+          prazo_inicio_contrato: condicoesComerciais.prazo_inicio_contrato || "",
+          prazo_fim_contrato: condicoesComerciais.prazo_fim_contrato || "",
         },
       });
 
@@ -492,7 +508,14 @@ export default function PropostaFormDialog({
       }
     }
 
-    const margem = custoUnitario > 0 ? ((valorUnitario - custoUnitario) / custoUnitario) * 100 : 0;
+    // Calcular margem (limitada a DECIMAL(5,2) = máximo 999.99)
+    let margem = 0;
+    if (custoUnitario > 0) {
+      margem = ((valorUnitario - custoUnitario) / custoUnitario) * 100;
+      // Limitar a 999.99% (limite do DECIMAL(5,2))
+      margem = Math.min(Math.max(margem, -999.99), 999.99);
+      margem = parseFloat(margem.toFixed(2));
+    }
 
     const newItem: ProposalItem = {
       product_id: produto.id,
@@ -504,10 +527,10 @@ export default function PropostaFormDialog({
       valor_unitario: valorUnitario,
       preco_unitario: valorUnitario, // compatibilidade
       comissao_percentual: produto.comissao_agenciamento_padrao || 0,
-      periodo_locacao_meses: isLocacao ? 12 : undefined,
+      periodo_locacao_meses: isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : undefined,
       desconto: 0,
       total: valorUnitario,
-      margem: parseFloat(margem.toFixed(2)),
+      margem: margem,
       estoque: produto.estoque_atual,
       imagem_url: produto.imagem_principal,
       vida_util_meses: produto.vida_util_meses || 36,
@@ -533,9 +556,14 @@ export default function PropostaFormDialog({
       item.total = subtotal - desconto;
       item.preco_unitario = item.valor_unitario; // manter compatibilidade
       
-      // Recalcular margem
+      // Recalcular margem (limitada a DECIMAL(5,2) = máximo 999.99)
       if (item.custo_unitario > 0) {
-        item.margem = ((item.valor_unitario - item.custo_unitario) / item.custo_unitario) * 100;
+        let margem = ((item.valor_unitario - item.custo_unitario) / item.custo_unitario) * 100;
+        // Limitar a 999.99% (limite do DECIMAL(5,2))
+        margem = Math.min(Math.max(margem, -999.99), 999.99);
+        item.margem = parseFloat(margem.toFixed(2));
+      } else {
+        item.margem = 0;
       }
     }
 
@@ -548,8 +576,22 @@ export default function PropostaFormDialog({
 
   const calcularTotais = () => {
     const totalItens = items.reduce((sum, item) => sum + item.total, 0);
-    const totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
+    let totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
+    
+    // Aplicar acréscimo se for parcelado
+    if (formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.acrescimo_percentual > 0) {
+      const acrescimo = (totalGeral * formData.condicoes_comerciais.acrescimo_percentual) / 100;
+      totalGeral = totalGeral + acrescimo;
+    }
+    
     return { totalItens, totalGeral };
+  };
+  
+  // Calcular valor da parcela
+  const calcularValorParcela = () => {
+    const { totalGeral } = calcularTotais();
+    const parcelas = formData.condicoes_comerciais.parcelas || 1;
+    return totalGeral / parcelas;
   };
 
   const gerarCodigo = async () => {
@@ -620,12 +662,29 @@ export default function PropostaFormDialog({
       const totalItens = calculations.reduce((sum, calc) => sum + calc.valor_subtotal, 0);
       const custoTotal = calculations.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
       const lucroTotal = totalItens - custoTotal;
+      
       // Margem sobre o custo (padrão comercial) - não sobre o valor de venda
-      const margemTotal = custoTotal > 0 ? (lucroTotal / custoTotal) * 100 : 0;
-      const totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
+      // Validar e limitar margem para DECIMAL(5,2) = máximo 999.99
+      let margemTotal = 0;
+      if (custoTotal > 0) {
+        margemTotal = (lucroTotal / custoTotal) * 100;
+        // Limitar a 999.99% (limite do DECIMAL(5,2))
+        margemTotal = Math.min(Math.max(margemTotal, -999.99), 999.99);
+        // Arredondar para 2 casas decimais
+        margemTotal = Math.round(margemTotal * 100) / 100;
+      }
+      
+      let totalGeral = totalItens - formData.desconto_total + formData.despesas_adicionais;
+      
+      // Aplicar acréscimo se for parcelado
+      if (formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.acrescimo_percentual > 0) {
+        const acrescimo = (totalGeral * formData.condicoes_comerciais.acrescimo_percentual) / 100;
+        totalGeral = totalGeral + acrescimo;
+      }
 
       const codigo = proposta?.codigo || await gerarCodigo();
 
+      // Arredondar todos os valores monetários para 2 casas decimais
       const proposalData = {
         codigo,
         versao: proposta?.versao || 1,
@@ -639,17 +698,18 @@ export default function PropostaFormDialog({
         introducao: formData.introducao,
         condicoes_comerciais: formData.condicoes_comerciais,
         observacoes_internas: formData.observacoes_internas,
-        total_itens: totalItens,
-        custo_total: custoTotal,
-        lucro_total: lucroTotal,
+        total_itens: Math.round(totalItens * 100) / 100,
+        custo_total: Math.round(custoTotal * 100) / 100,
+        lucro_total: Math.round(lucroTotal * 100) / 100,
         margem_percentual_total: margemTotal,
-        desconto_total: formData.desconto_total,
-        despesas_adicionais: formData.despesas_adicionais,
-        total_geral: totalGeral,
+        desconto_total: Math.round(formData.desconto_total * 100) / 100,
+        despesas_adicionais: Math.round(formData.despesas_adicionais * 100) / 100,
+        total_geral: Math.round(totalGeral * 100) / 100,
         status: formData.status,
       };
 
       let proposalId = proposta?.id;
+      const wasApproved = proposta?.status !== 'aprovada' && formData.status === 'aprovada';
 
       if (proposta) {
         const { error } = await supabase
@@ -683,27 +743,41 @@ export default function PropostaFormDialog({
         return value;
       };
 
+      // Função helper para validar e limitar valores DECIMAL(5,2)
+      const limitDecimal52 = (value: number | undefined | null): number | null => {
+        if (value === undefined || value === null) return null;
+        // Limitar a -999.99 a 999.99 (limite do DECIMAL(5,2))
+        const limited = Math.min(Math.max(value, -999.99), 999.99);
+        // Arredondar para 2 casas decimais
+        return Math.round(limited * 100) / 100;
+      };
+
       // Inserir novos itens
-      const itemsData = items.map(item => ({
-        proposal_id: proposalId,
-        product_id: item.product_id ? cleanUUID(item.product_id) : null,
-        fornecedor_id: item.fornecedor_id ? cleanUUID(item.fornecedor_id) : null,
-        descricao: item.descricao,
-        codigo: item.codigo,
-        unidade: item.unidade,
-        quantidade: item.quantidade,
-        custo_unitario: item.custo_unitario,
-        valor_unitario: item.valor_unitario,
-        preco_unitario: item.valor_unitario, // compatibilidade
-        comissao_percentual: item.comissao_percentual,
-        periodo_locacao_meses: item.periodo_locacao_meses,
-        desconto: item.desconto,
-        total: item.total,
-        margem: item.margem,
-        estoque: item.estoque,
-        imagem_url: item.imagem_url,
-        lucro_subtotal: (item.valor_unitario - item.custo_unitario) * item.quantidade * (item.periodo_locacao_meses || 1),
-      }));
+      const itemsData = items.map(item => {
+        const periodo = item.periodo_locacao_meses || 1;
+        const lucroSubtotal = (item.valor_unitario - item.custo_unitario) * item.quantidade * periodo;
+        
+        return {
+          proposal_id: proposalId,
+          product_id: item.product_id ? cleanUUID(item.product_id) : null,
+          fornecedor_id: item.fornecedor_id ? cleanUUID(item.fornecedor_id) : null,
+          descricao: item.descricao,
+          codigo: item.codigo,
+          unidade: item.unidade,
+          quantidade: item.quantidade,
+          custo_unitario: Math.round(item.custo_unitario * 100) / 100,
+          valor_unitario: Math.round(item.valor_unitario * 100) / 100,
+          preco_unitario: Math.round(item.valor_unitario * 100) / 100, // compatibilidade
+          comissao_percentual: limitDecimal52(item.comissao_percentual),
+          periodo_locacao_meses: item.periodo_locacao_meses,
+          desconto: limitDecimal52(item.desconto) || 0,
+          total: Math.round(item.total * 100) / 100,
+          margem: limitDecimal52(item.margem),
+          estoque: item.estoque,
+          imagem_url: item.imagem_url,
+          lucro_subtotal: Math.round(lucroSubtotal * 100) / 100,
+        };
+      });
 
       const { error: itemsError } = await supabase
         .from("proposal_items")
@@ -712,8 +786,54 @@ export default function PropostaFormDialog({
       if (itemsError) throw itemsError;
 
       logger.ui(`✅ Proposta ${proposta ? 'atualizada' : 'criada'} com sucesso: ${codigo}`);
-      toast.success(proposta ? "Proposta atualizada!" : "Proposta criada!");
-      onSuccess();
+      
+      // Verificar se proposta foi aprovada (nova ou mudou status) e pedido foi criado automaticamente
+      let salesOrderCreated = null;
+      if (formData.status === 'aprovada' && proposalId && (!proposta || wasApproved)) {
+        // Aguardar um pouco para o trigger executar
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Verificar se pedido foi criado
+        const { data: salesOrderData } = await supabase
+          .from("sales_orders")
+          .select("id, numero_pedido")
+          .eq("proposta_id", proposalId)
+          .maybeSingle();
+        
+        if (salesOrderData) {
+          salesOrderCreated = salesOrderData;
+          toast.success(
+            `Proposta aprovada! Pedido ${salesOrderData.numero_pedido} criado automaticamente.`,
+            {
+              duration: 5000,
+            }
+          );
+        } else {
+          // Se não encontrou, pode ser que o trigger ainda não executou
+          // Tentar mais uma vez após um delay maior
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const { data: retryData } = await supabase
+            .from("sales_orders")
+            .select("id, numero_pedido")
+            .eq("proposta_id", proposalId)
+            .maybeSingle();
+          
+          if (retryData) {
+            salesOrderCreated = retryData;
+            toast.success(
+              `Proposta aprovada! Pedido ${retryData.numero_pedido} criado automaticamente.`,
+              {
+                duration: 5000,
+              }
+            );
+          }
+        }
+      } else {
+        toast.success(proposta ? "Proposta atualizada!" : "Proposta criada!");
+      }
+      
+      // Passar informação do pedido criado para o callback
+      onSuccess(salesOrderCreated);
       onOpenChange(false);
     } catch (error: any) {
       logger.error("DB", "Erro ao salvar proposta", error);
@@ -758,17 +878,22 @@ export default function PropostaFormDialog({
   })();
   
   const filteredProdutos = produtos.filter(p => {
-    const matchesSearch = p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(searchProduto.toLowerCase());
+    // Se não há busca, mostrar todos os produtos (filtrados apenas por tipo)
+    const matchesSearch = !searchProduto || 
+      p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
+      p.codigo?.toLowerCase().includes(searchProduto.toLowerCase()) ||
+      p.sku_interno?.toLowerCase().includes(searchProduto.toLowerCase());
+    
+    if (!matchesSearch) return false;
     
     // Filtrar por tipo de disponibilidade
-    if (formData.tipo_operacao === 'venda_direta') {
-      return matchesSearch && (p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos');
-    } else if (formData.tipo_operacao === 'locacao_direta') {
-      return matchesSearch && (p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos');
+    if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
+      return p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos';
+    } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
+      return p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos';
     }
     
-    return matchesSearch;
+    return true;
   });
 
   return (
@@ -778,6 +903,9 @@ export default function PropostaFormDialog({
           <DialogTitle>
             {proposta ? "Editar Proposta" : "Nova Proposta Comercial"}
           </DialogTitle>
+          <DialogDescription>
+            {proposta ? "Edite os dados da proposta comercial" : "Preencha os dados para criar uma nova proposta comercial"}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
@@ -797,7 +925,29 @@ export default function PropostaFormDialog({
               <TabsContent value="cabecalho" className="space-y-4">
                 <TipoOperacaoSelector
                   value={formData.tipo_operacao}
-                  onChange={(tipo) => setFormData({ ...formData, tipo_operacao: tipo })}
+                  onChange={(tipo) => {
+                    const isLocacao = tipo.includes('locacao');
+                    const prazoPadrao = formData.condicoes_comerciais.prazo_locacao_meses || 12;
+                    
+                    setFormData({ 
+                      ...formData, 
+                      tipo_operacao: tipo,
+                      // Garantir que prazo_locacao_meses existe quando for locação
+                      condicoes_comerciais: {
+                        ...formData.condicoes_comerciais,
+                        prazo_locacao_meses: isLocacao ? prazoPadrao : formData.condicoes_comerciais.prazo_locacao_meses,
+                      },
+                    });
+                    
+                    // Se mudou para locação, aplicar prazo padrão aos itens sem período
+                    if (isLocacao && items.length > 0) {
+                      const updatedItems = items.map(item => ({
+                        ...item,
+                        periodo_locacao_meses: item.periodo_locacao_meses || prazoPadrao,
+                      }));
+                      setItems(updatedItems);
+                    }
+                  }}
                   disabled={loading}
                 />
 
@@ -1060,12 +1210,12 @@ export default function PropostaFormDialog({
                     </div>
                   </div>
 
-                  {searchProduto && (
-                    <div className="space-y-2 max-h-40 overflow-y-auto mb-4">
+                  {filteredProdutos.length > 0 ? (
+                    <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
                       {filteredProdutos.map((produto) => (
                         <div
                           key={produto.id}
-                          className="flex items-center justify-between p-2 border rounded cursor-pointer hover:bg-accent"
+                          className="flex items-center justify-between p-2 border rounded cursor-pointer hover:bg-accent transition-colors"
                           onClick={() => addProduto(produto)}
                         >
                           <div className="flex items-center gap-2 flex-1">
@@ -1082,7 +1232,13 @@ export default function PropostaFormDialog({
                             <div className="flex-1 min-w-0">
                               <p className="font-medium truncate">{produto.nome}</p>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span>{produto.codigo}</span>
+                                {produto.sku_interno && (
+                                  <>
+                                    <span className="font-mono">{produto.sku_interno}</span>
+                                    <span>•</span>
+                                  </>
+                                )}
+                                <span>{produto.codigo || 'N/A'}</span>
                                 {produto.brand && (
                                   <>
                                     <span>•</span>
@@ -1120,6 +1276,16 @@ export default function PropostaFormDialog({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      {searchProduto ? (
+                        <p>Nenhum produto encontrado para "{searchProduto}"</p>
+                      ) : produtos.length === 0 ? (
+                        <p>Nenhum produto disponível</p>
+                      ) : (
+                        <p>Digite para buscar produtos ou selecione um tipo de operação</p>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -1314,6 +1480,10 @@ export default function PropostaFormDialog({
                           condicoes_comerciais: {
                             ...formData.condicoes_comerciais,
                             tipo: value,
+                            // Resetar acréscimo se não for parcelado
+                            acrescimo_percentual: value === "parcelado" ? formData.condicoes_comerciais.acrescimo_percentual : 0,
+                            // Resetar parcelas se não for parcelado
+                            parcelas: value === "parcelado" ? formData.condicoes_comerciais.parcelas : 1,
                           },
                         })
                       }
@@ -1340,12 +1510,38 @@ export default function PropostaFormDialog({
                           ...formData,
                           condicoes_comerciais: {
                             ...formData.condicoes_comerciais,
-                            parcelas: parseInt(e.target.value),
+                            parcelas: parseInt(e.target.value) || 1,
                           },
                         })
                       }
+                      disabled={formData.condicoes_comerciais.tipo !== "parcelado"}
                     />
                   </div>
+
+                  {formData.condicoes_comerciais.tipo === "parcelado" && (
+                    <div>
+                      <Label>Acréscimo (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.condicoes_comerciais.acrescimo_percentual || 0}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            condicoes_comerciais: {
+                              ...formData.condicoes_comerciais,
+                              acrescimo_percentual: parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
+                        placeholder="Ex: 2.5"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Percentual de acréscimo aplicado ao total quando parcelado
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <Label>Forma de Pagamento</Label>
@@ -1397,6 +1593,38 @@ export default function PropostaFormDialog({
                       placeholder="Ex: 12 meses"
                     />
                   </div>
+
+                  {(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && (
+                    <div>
+                      <Label>Prazo de Locação (meses)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={formData.condicoes_comerciais.prazo_locacao_meses || 12}
+                        onChange={(e) => {
+                          const prazo = parseInt(e.target.value) || 12;
+                          setFormData({
+                            ...formData,
+                            condicoes_comerciais: {
+                              ...formData.condicoes_comerciais,
+                              prazo_locacao_meses: prazo,
+                            },
+                          });
+                          
+                          // Aplicar prazo a todos os itens que não têm período definido
+                          const updatedItems = items.map(item => ({
+                            ...item,
+                            periodo_locacao_meses: item.periodo_locacao_meses || prazo,
+                          }));
+                          setItems(updatedItems);
+                        }}
+                        placeholder="Ex: 12"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Prazo padrão de locação em meses. Será aplicado automaticamente aos itens sem período definido. Pode ser ajustado individualmente em cada item.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
@@ -1442,6 +1670,15 @@ export default function PropostaFormDialog({
                       />
                     </div>
 
+                    {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.acrescimo_percentual > 0 && (
+                      <div className="flex justify-between items-center text-sm text-muted-foreground">
+                        <span>Acréscimo ({formData.condicoes_comerciais.acrescimo_percentual}%):</span>
+                        <span>
+                          R$ {((totalItens - formData.desconto_total + formData.despesas_adicionais) * formData.condicoes_comerciais.acrescimo_percentual / 100).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="border-t pt-4 mt-4">
                       <div className="flex justify-between items-center">
                         <span className="text-2xl font-bold">Total Geral:</span>
@@ -1449,6 +1686,17 @@ export default function PropostaFormDialog({
                           R$ {totalGeral.toFixed(2)}
                         </span>
                       </div>
+                      
+                      {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.parcelas > 1 && (
+                        <div className="flex justify-between items-center mt-2 pt-2 border-t">
+                          <span className="text-lg font-semibold">
+                            Valor da Parcela ({formData.condicoes_comerciais.parcelas}x):
+                          </span>
+                          <span className="text-lg font-semibold text-success">
+                            R$ {calcularValorParcela().toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>

@@ -5,12 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 export default function Auth() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [savedEmail, setSavedEmail] = useState("");
+  const [savedPassword, setSavedPassword] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,6 +29,19 @@ export default function Auth() {
       }
     });
 
+    // Carregar credenciais salvas do localStorage
+    const savedCredentials = localStorage.getItem("konnecta_saved_credentials");
+    if (savedCredentials) {
+      try {
+        const { email, password } = JSON.parse(savedCredentials);
+        setSavedEmail(email || "");
+        setSavedPassword(password || "");
+        setRememberMe(true);
+      } catch (error) {
+        console.error("Erro ao carregar credenciais salvas:", error);
+      }
+    }
+
     return () => subscription.unsubscribe();
   }, [navigate]);
 
@@ -32,9 +49,15 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
 
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
+    // Usar valores dos estados (campos controlados)
+    const email = savedEmail.trim();
+    const password = savedPassword;
+
+    if (!email || !password) {
+      toast.error("Por favor, preencha todos os campos");
+      setLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -44,6 +67,19 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
+      // Salvar credenciais se "Lembrar senha" estiver marcado
+      if (rememberMe) {
+        localStorage.setItem(
+          "konnecta_saved_credentials",
+          JSON.stringify({ email, password })
+        );
+      } else {
+        // Remover credenciais salvas se não quiser lembrar
+        localStorage.removeItem("konnecta_saved_credentials");
+        // Limpar campos também
+        setSavedEmail("");
+        setSavedPassword("");
+      }
       toast.success("Login realizado com sucesso!");
     }
 
@@ -117,6 +153,8 @@ export default function Auth() {
                   name="email"
                   type="email"
                   placeholder="seu@email.com"
+                  value={savedEmail}
+                  onChange={(e) => setSavedEmail(e.target.value)}
                   required
                 />
               </div>
@@ -127,8 +165,24 @@ export default function Auth() {
                   name="password"
                   type="password"
                   placeholder="••••••••"
+                  value={savedPassword}
+                  onChange={(e) => setSavedPassword(e.target.value)}
                   required
                 />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="remember"
+                  name="remember"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(checked === true)}
+                />
+                <Label
+                  htmlFor="remember"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Lembrar senha
+                </Label>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Entrando..." : "Entrar"}

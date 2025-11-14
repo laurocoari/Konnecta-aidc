@@ -43,6 +43,7 @@ export function ProdutoFormDialog({
   const [selectedBrand, setSelectedBrand] = useState<any>(null);
   const [brandSuppliers, setBrandSuppliers] = useState<any[]>([]);
   const [formData, setFormData] = useState<any>({
+    sku_interno: "",
     codigo: "",
     nome: "",
     categoria: "",
@@ -78,6 +79,19 @@ export function ProdutoFormDialog({
     loadBrands();
   }, []);
 
+  // Função para gerar SKU interno automático (opcional, o banco gera automaticamente)
+  const generateSKU = async () => {
+    try {
+      const { data, error } = await supabase.rpc('generate_sku_interno');
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      console.error("Error generating SKU:", error);
+      // Retornar null para deixar o banco gerar automaticamente
+      return null;
+    }
+  };
+
   // Carregar marca e fornecedores quando brand_id mudar
   useEffect(() => {
     if (formData.brand_id) {
@@ -91,6 +105,7 @@ export function ProdutoFormDialog({
   useEffect(() => {
     if (product) {
       const productData = {
+        sku_interno: product.sku_interno || "",
         codigo: product.codigo || "",
         nome: product.nome || "",
         categoria: product.categoria || "",
@@ -128,8 +143,9 @@ export function ProdutoFormDialog({
         loadBrandAndSuppliers(product.brand_id);
       }
     } else {
-      // Reset form
+      // Reset form - SKU será gerado automaticamente pelo banco
       setFormData({
+        sku_interno: "", // Deixar vazio para o banco gerar automaticamente
         codigo: "",
         nome: "",
         categoria: "",
@@ -375,7 +391,8 @@ export function ProdutoFormDialog({
         return value.trim();
       };
 
-      const dataToSave = {
+      // Preparar dados para salvar
+      const dataToSave: any = {
         ...formData,
         // Campos UUID - converter string vazia para null
         brand_id: cleanUUID(formData.brand_id),
@@ -401,6 +418,11 @@ export function ProdutoFormDialog({
         videos: formData.videos && formData.videos.length > 0 ? formData.videos : null,
       };
 
+      // Remover sku_interno se vazio para deixar o banco gerar automaticamente
+      if (!dataToSave.sku_interno || dataToSave.sku_interno.trim() === '') {
+        delete dataToSave.sku_interno;
+      }
+
       if (product) {
         // Update existing product
         const { error } = await supabase
@@ -411,11 +433,21 @@ export function ProdutoFormDialog({
         if (error) throw error;
         toast.success("Produto atualizado com sucesso!");
       } else {
-        // Create new product
-        const { error } = await supabase.from("products").insert(dataToSave);
+        // Create new product - retornar o produto criado para mostrar o SKU gerado
+        const { data: newProduct, error } = await supabase
+          .from("products")
+          .insert(dataToSave)
+          .select()
+          .single();
 
         if (error) throw error;
-        toast.success("Produto cadastrado com sucesso!");
+        
+        // Atualizar formData com o SKU gerado para exibir no formulário
+        if (newProduct?.sku_interno) {
+          setFormData((prev) => ({ ...prev, sku_interno: newProduct.sku_interno }));
+        }
+        
+        toast.success(`Produto cadastrado com sucesso! SKU: ${newProduct?.sku_interno || 'gerado'}`);
       }
 
       onClose();
@@ -458,12 +490,19 @@ export function ProdutoFormDialog({
                   {formData.nome || "Nome do Produto"}
                 </h2>
 
-                {/* Código */}
-                {formData.codigo && (
-                  <p className="text-sm text-muted-foreground font-mono mb-4">
-                    Código: {formData.codigo}
-                  </p>
-                )}
+                {/* SKU e Código */}
+                <div className="flex gap-4 mb-4">
+                  {formData.sku_interno && (
+                    <p className="text-sm text-muted-foreground font-mono">
+                      SKU: <span className="font-semibold text-primary">{formData.sku_interno}</span>
+                    </p>
+                  )}
+                  {formData.codigo && (
+                    <p className="text-sm text-muted-foreground font-mono">
+                      Código Fornecedor: {formData.codigo}
+                    </p>
+                  )}
+                </div>
 
                 {/* Marca */}
                 {selectedBrand && (
@@ -541,16 +580,32 @@ export function ProdutoFormDialog({
             </TabsList>
 
             <TabsContent value="geral" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="codigo">Código Interno *</Label>
+                  <Label htmlFor="sku_interno">SKU Interno Konnecta</Label>
+                  <Input
+                    id="sku_interno"
+                    value={formData.sku_interno || ""}
+                    onChange={(e) => handleChange("sku_interno", e.target.value)}
+                    placeholder="Será gerado automaticamente"
+                    disabled={true} // Sempre desabilitado - gerado automaticamente pelo banco
+                    className="font-mono bg-muted"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Gerado automaticamente pelo sistema (KONN-000001, KONN-000002...)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="codigo">Código Fornecedor</Label>
                   <Input
                     id="codigo"
                     value={formData.codigo}
                     onChange={(e) => handleChange("codigo", e.target.value)}
-                    placeholder="PRD-001"
-                    required
+                    placeholder="Código do fornecedor"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Código do fornecedor (pode variar por fornecedor)
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="nome">Nome do Produto *</Label>

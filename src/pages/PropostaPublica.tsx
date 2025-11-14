@@ -235,10 +235,27 @@ export default function PropostaPublica() {
                     <span className="font-semibold">{formatCurrency(proposal.despesas_adicionais)}</span>
                   </div>
                 )}
+                {proposal.condicoes_comerciais?.tipo === "parcelado" && proposal.condicoes_comerciais?.acrescimo_percentual > 0 && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>Acréscimo ({proposal.condicoes_comerciais.acrescimo_percentual}%):</span>
+                    <span className="font-semibold">
+                      +{formatCurrency(
+                        ((proposal.total_itens - proposal.desconto_total + proposal.despesas_adicionais) * 
+                         proposal.condicoes_comerciais.acrescimo_percentual) / 100
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-2 text-lg font-bold text-primary">
                   <span>TOTAL GERAL:</span>
                   <span>{formatCurrency(proposal.total_geral)}</span>
                 </div>
+                {proposal.condicoes_comerciais?.tipo === "parcelado" && proposal.condicoes_comerciais?.parcelas > 1 && (
+                  <div className="flex justify-between border-t pt-2 mt-2 text-base font-semibold text-success">
+                    <span>Valor da Parcela ({proposal.condicoes_comerciais.parcelas}x):</span>
+                    <span>{formatCurrency(proposal.total_geral / proposal.condicoes_comerciais.parcelas)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -247,10 +264,45 @@ export default function PropostaPublica() {
           {proposal.condicoes_comerciais && (
             <div className="mb-6 bg-muted/50 p-4 rounded-lg border-l-4 border-primary">
               <h3 className="font-semibold mb-3 text-primary">CONDIÇÕES COMERCIAIS</h3>
-              <p className="text-sm whitespace-pre-wrap">
-                {proposal.condicoes_comerciais.texto || 
-                 'Condições comerciais a serem definidas conforme negociação.'}
-              </p>
+              <div className="space-y-2 text-sm">
+                {proposal.condicoes_comerciais.tipo && (
+                  <p>
+                    <strong>Tipo de Pagamento:</strong> {
+                      proposal.condicoes_comerciais.tipo === "avista" ? "À Vista" :
+                      proposal.condicoes_comerciais.tipo === "parcelado" ? "Parcelado" :
+                      "Nenhuma"
+                    }
+                  </p>
+                )}
+                {proposal.condicoes_comerciais.tipo === "parcelado" && proposal.condicoes_comerciais.parcelas > 1 && (
+                  <p>
+                    <strong>Parcelas:</strong> {proposal.condicoes_comerciais.parcelas}x de {formatCurrency(proposal.total_geral / proposal.condicoes_comerciais.parcelas)}
+                  </p>
+                )}
+                {proposal.condicoes_comerciais.forma_pagamento && (
+                  <p>
+                    <strong>Forma de Pagamento:</strong> {proposal.condicoes_comerciais.forma_pagamento}
+                  </p>
+                )}
+                {proposal.condicoes_comerciais.prazo_entrega && (
+                  <p>
+                    <strong>Prazo de Entrega:</strong> {proposal.condicoes_comerciais.prazo_entrega}
+                  </p>
+                )}
+                {proposal.condicoes_comerciais.garantia && (
+                  <p>
+                    <strong>Garantia:</strong> {proposal.condicoes_comerciais.garantia}
+                  </p>
+                )}
+                {proposal.condicoes_comerciais.texto && (
+                  <p className="mt-3 whitespace-pre-wrap">{proposal.condicoes_comerciais.texto}</p>
+                )}
+                {!proposal.condicoes_comerciais.texto && 
+                 !proposal.condicoes_comerciais.tipo && 
+                 !proposal.condicoes_comerciais.forma_pagamento && (
+                  <p>Condições comerciais a serem definidas conforme negociação.</p>
+                )}
+              </div>
             </div>
           )}
 

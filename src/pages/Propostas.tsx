@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit, ShoppingCart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -26,6 +26,8 @@ import PropostaFormDialog from "@/components/Propostas/PropostaFormDialog";
 import NovaVersaoDialog from "@/components/Propostas/NovaVersaoDialog";
 import HistoricoVersoesDialog from "@/components/Propostas/HistoricoVersoesDialog";
 import { PropostaPreviewDialog } from "@/components/Propostas/PropostaPreviewDialog";
+import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
+import { useNavigate } from "react-router-dom";
 
 const statusColors = {
   rascunho: "secondary",
@@ -58,6 +60,7 @@ const tipoOperacaoLabels = {
 };
 
 export default function Propostas() {
+  const navigate = useNavigate();
   const [propostas, setPropostas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -71,10 +74,74 @@ export default function Propostas() {
   const [selectedCodigo, setSelectedCodigo] = useState("");
   const [selectedProposalId, setSelectedProposalId] = useState("");
   const [selectedVersao, setSelectedVersao] = useState(1);
+  const [salesOrdersMap, setSalesOrdersMap] = useState<Record<string, any>>({});
+  const [salesOrderDialogOpen, setSalesOrderDialogOpen] = useState(false);
+  const [selectedSalesOrder, setSelectedSalesOrder] = useState<any>(null);
 
   useEffect(() => {
     loadPropostas();
   }, []);
+
+  useEffect(() => {
+    // Carregar pedidos relacionados às propostas aprovadas
+    if (propostas.length > 0) {
+      loadRelatedSalesOrders();
+    }
+  }, [propostas]);
+
+  const loadRelatedSalesOrders = async () => {
+    try {
+      const aprovadasIds = propostas
+        .filter((p) => p.status === "aprovada")
+        .map((p) => p.id);
+
+      if (aprovadasIds.length === 0) {
+        setSalesOrdersMap({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("sales_orders")
+        .select("id, numero_pedido, proposta_id")
+        .in("proposta_id", aprovadasIds);
+
+      if (error) throw error;
+
+      const map: Record<string, any> = {};
+      (data || []).forEach((order) => {
+        if (order.proposta_id) {
+          map[order.proposta_id] = order;
+        }
+      });
+
+      setSalesOrdersMap(map);
+    } catch (error: any) {
+      console.error("Error loading related sales orders:", error);
+    }
+  };
+
+  const handleGoToSalesOrder = async (proposta: any) => {
+    const salesOrder = salesOrdersMap[proposta.id];
+    
+    if (salesOrder) {
+      // Buscar dados completos do pedido
+      const { data, error } = await supabase
+        .from("sales_orders")
+        .select("*")
+        .eq("id", salesOrder.id)
+        .single();
+
+      if (error) {
+        toast.error("Erro ao carregar pedido");
+        return;
+      }
+
+      setSelectedSalesOrder(data);
+      setSalesOrderDialogOpen(true);
+    } else {
+      toast.info("Pedido ainda não foi criado. Ele será criado automaticamente.");
+    }
+  };
 
   const loadPropostas = async () => {
     setLoading(true);
@@ -158,9 +225,21 @@ export default function Propostas() {
     setPreviewDialogOpen(true);
   };
 
-  const handleFormSuccess = () => {
-    loadPropostas();
+  const handleFormSuccess = async (salesOrderCreated?: any) => {
+    const propostaId = selectedProposta?.id;
+    await loadPropostas();
     setSelectedProposta(null);
+    
+    // Se um pedido foi criado automaticamente, atualizar o mapa de pedidos
+    if (salesOrderCreated && propostaId) {
+      setSalesOrdersMap(prev => ({
+        ...prev,
+        [propostaId]: salesOrderCreated,
+      }));
+    } else {
+      // Recarregar pedidos relacionados para propostas aprovadas
+      await loadRelatedSalesOrders();
+    }
   };
 
   // Calcular estatísticas
@@ -277,7 +356,10 @@ export default function Propostas() {
                 <TableHead>Versão</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Cliente</TableHead>
-                <TableHead>Valor</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+                <TableHead className="text-right">Custo</TableHead>
+                <TableHead className="text-right">Lucro</TableHead>
+                <TableHead className="text-right">Margem</TableHead>
                 <TableHead>Data</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead>Status</TableHead>
@@ -313,13 +395,50 @@ export default function Propostas() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 font-semibold text-success">
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1 font-semibold text-success">
                       <DollarSign className="h-4 w-4" />
                       R${" "}
                       {proposta.total_geral.toLocaleString("pt-BR", {
                         minimumFractionDigits: 2,
                       })}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="text-sm font-medium text-muted-foreground">
+                      {proposta.custo_total != null
+                        ? `R$ ${Number(proposta.custo_total).toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}`
+                        : "-"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className={`text-sm font-semibold ${
+                      proposta.lucro_total != null && Number(proposta.lucro_total) >= 0
+                        ? "text-success"
+                        : proposta.lucro_total != null
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}>
+                      {proposta.lucro_total != null
+                        ? `R$ ${Number(proposta.lucro_total).toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}`
+                        : "-"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className={`text-sm font-semibold ${
+                      proposta.margem_percentual_total != null && Number(proposta.margem_percentual_total) >= 0
+                        ? "text-success"
+                        : proposta.margem_percentual_total != null
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}>
+                      {proposta.margem_percentual_total != null
+                        ? `${Number(proposta.margem_percentual_total).toFixed(2)}%`
+                        : "-"}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -335,11 +454,19 @@ export default function Propostas() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={statusColors[proposta.status as keyof typeof statusColors]}
-                    >
-                      {statusLabels[proposta.status as keyof typeof statusLabels]}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={statusColors[proposta.status as keyof typeof statusColors]}
+                      >
+                        {statusLabels[proposta.status as keyof typeof statusLabels]}
+                      </Badge>
+                      {proposta.status === "aprovada" && salesOrdersMap[proposta.id] && (
+                        <Badge variant="outline" className="gap-1">
+                          <ShoppingCart className="h-3 w-3" />
+                          {salesOrdersMap[proposta.id].numero_pedido}
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -381,6 +508,31 @@ export default function Propostas() {
                           <Download className="h-4 w-4" />
                         </Button>
                       )}
+                      {proposta.status === "aprovada" && (
+                        <>
+                          {salesOrdersMap[proposta.id] ? (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => handleGoToSalesOrder(proposta)}
+                              title={`Ver Pedido ${salesOrdersMap[proposta.id].numero_pedido}`}
+                              className="gap-1"
+                            >
+                              <ShoppingCart className="h-4 w-4" />
+                              <span className="text-xs">{salesOrdersMap[proposta.id].numero_pedido}</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleGoToSalesOrder(proposta)}
+                              title="Ir para Pedido de Venda"
+                            >
+                              <ShoppingCart className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -417,6 +569,18 @@ export default function Propostas() {
         codigo={selectedCodigo}
         versao={selectedVersao}
       />
+
+      {selectedSalesOrder && (
+        <SalesOrderDetailDialog
+          open={salesOrderDialogOpen}
+          onOpenChange={setSalesOrderDialogOpen}
+          salesOrder={selectedSalesOrder}
+          onSuccess={() => {
+            loadPropostas();
+            setSelectedSalesOrder(null);
+          }}
+        />
+      )}
     </div>
   );
 }
