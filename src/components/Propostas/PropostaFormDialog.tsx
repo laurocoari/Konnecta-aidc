@@ -13,10 +13,13 @@ import { Badge } from "@/components/ui/badge";
 import SimuladorROI from "@/components/Financeiro/SimuladorROI";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TipoOperacaoSelector } from "./TipoOperacaoSelector";
 import { FinancialSummaryPanel } from "./FinancialSummaryPanel";
 import { calcularCustoLocacaoDireta, calcularValorComMargem } from "@/hooks/useProposalCalculations";
 import { logger } from "@/lib/logger";
+import { createAccountsReceivableFromProposal } from "@/lib/proposalAccountsReceivableService";
+import { createRentalReceiptFromProposal } from "@/lib/rentalReceiptService";
 
 interface PropostaFormDialogProps {
   open: boolean;
@@ -634,6 +637,20 @@ export default function PropostaFormDialog({
         toast.error("Defina o período de locação para todos os itens");
         return;
       }
+
+      // Validar datas de contrato (obrigatórias para locação)
+      if (!formData.condicoes_comerciais.prazo_inicio_contrato || !formData.condicoes_comerciais.prazo_fim_contrato) {
+        toast.error("Informe o prazo inicial e final do contrato para propostas de locação");
+        return;
+      }
+
+      // Validar que data final é posterior à data inicial
+      const inicio = new Date(formData.condicoes_comerciais.prazo_inicio_contrato);
+      const fim = new Date(formData.condicoes_comerciais.prazo_fim_contrato);
+      if (fim <= inicio) {
+        toast.error("A data final do contrato deve ser posterior à data inicial");
+        return;
+      }
     }
 
     setLoading(true);
@@ -830,6 +847,63 @@ export default function PropostaFormDialog({
         }
       } else {
         toast.success(proposta ? "Proposta atualizada!" : "Proposta criada!");
+      }
+
+      // Criar contas a receber se opção estiver marcada
+      if (formData.gerar_contas_receber && proposalId) {
+        try {
+          // Para locação, usar meses do contrato; para venda, usar parcelas
+          let parcelas = 1;
+          if (formData.tipo_operacao.includes('locacao')) {
+            parcelas = formData.condicoes_comerciais.prazo_locacao_meses || 1;
+          } else {
+            parcelas = formData.condicoes_comerciais.tipo === "parcelado" 
+              ? formData.condicoes_comerciais.parcelas || 1 
+              : 1;
+          }
+          
+          const contasIds = await createAccountsReceivableFromProposal(proposalId, {
+            valorTotal: totalGeral,
+            parcelas: parcelas,
+            dataEmissao: formData.data_proposta,
+          });
+
+          if (contasIds.length > 0) {
+            toast.success(
+              `${contasIds.length} conta(s) a receber criada(s) com sucesso!`,
+              { duration: 5000 }
+            );
+          }
+        } catch (error: any) {
+          logger.error("Erro ao criar contas a receber:", error);
+          toast.error(`Erro ao criar contas a receber: ${error.message}`);
+          // Não bloquear o fluxo se falhar a criação de contas
+        }
+      }
+
+      // Gerar recibo de locação se proposta de locação foi aprovada
+      if (
+        formData.status === 'aprovada' &&
+        proposalId &&
+        (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') &&
+        (!proposta || wasApproved)
+      ) {
+        try {
+          const recibo = await createRentalReceiptFromProposal(proposalId, {
+            periodo_locacao_inicio: formData.condicoes_comerciais.prazo_inicio_contrato,
+            periodo_locacao_fim: formData.condicoes_comerciais.prazo_fim_contrato,
+            observacoes: `Recibo gerado automaticamente da proposta ${codigo}`,
+          });
+
+          toast.success(
+            `Recibo de locação ${recibo.numero_recibo} criado automaticamente!`,
+            { duration: 5000 }
+          );
+        } catch (error: any) {
+          logger.error("Erro ao criar recibo de locação:", error);
+          toast.error(`Erro ao criar recibo de locação: ${error.message}`);
+          // Não bloquear o fluxo se falhar a criação do recibo
+        }
       }
       
       // Passar informação do pedido criado para o callback
@@ -1470,77 +1544,82 @@ export default function PropostaFormDialog({
 
               <TabsContent value="condicoes" className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>Tipo</Label>
-                    <Select
-                      value={formData.condicoes_comerciais.tipo}
-                      onValueChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          condicoes_comerciais: {
-                            ...formData.condicoes_comerciais,
-                            tipo: value,
-                            // Resetar acréscimo se não for parcelado
-                            acrescimo_percentual: value === "parcelado" ? formData.condicoes_comerciais.acrescimo_percentual : 0,
-                            // Resetar parcelas se não for parcelado
-                            parcelas: value === "parcelado" ? formData.condicoes_comerciais.parcelas : 1,
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="nenhuma">Nenhuma</SelectItem>
-                        <SelectItem value="avista">À Vista</SelectItem>
-                        <SelectItem value="parcelado">Parcelado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {/* Ocultar Tipo e Parcelas se for locação */}
+                  {!(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && (
+                    <>
+                      <div>
+                        <Label>Tipo</Label>
+                        <Select
+                          value={formData.condicoes_comerciais.tipo}
+                          onValueChange={(value) =>
+                            setFormData({
+                              ...formData,
+                              condicoes_comerciais: {
+                                ...formData.condicoes_comerciais,
+                                tipo: value,
+                                // Resetar acréscimo se não for parcelado
+                                acrescimo_percentual: value === "parcelado" ? formData.condicoes_comerciais.acrescimo_percentual : 0,
+                                // Resetar parcelas se não for parcelado
+                                parcelas: value === "parcelado" ? formData.condicoes_comerciais.parcelas : 1,
+                              },
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="nenhuma">Nenhuma</SelectItem>
+                            <SelectItem value="avista">À Vista</SelectItem>
+                            <SelectItem value="parcelado">Parcelado</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                  <div>
-                    <Label>Parcelas</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={formData.condicoes_comerciais.parcelas}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          condicoes_comerciais: {
-                            ...formData.condicoes_comerciais,
-                            parcelas: parseInt(e.target.value) || 1,
-                          },
-                        })
-                      }
-                      disabled={formData.condicoes_comerciais.tipo !== "parcelado"}
-                    />
-                  </div>
+                      <div>
+                        <Label>Parcelas</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={formData.condicoes_comerciais.parcelas}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              condicoes_comerciais: {
+                                ...formData.condicoes_comerciais,
+                                parcelas: parseInt(e.target.value) || 1,
+                              },
+                            })
+                          }
+                          disabled={formData.condicoes_comerciais.tipo !== "parcelado"}
+                        />
+                      </div>
 
-                  {formData.condicoes_comerciais.tipo === "parcelado" && (
-                    <div>
-                      <Label>Acréscimo (%)</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.condicoes_comerciais.acrescimo_percentual || 0}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            condicoes_comerciais: {
-                              ...formData.condicoes_comerciais,
-                              acrescimo_percentual: parseFloat(e.target.value) || 0,
-                            },
-                          })
-                        }
-                        placeholder="Ex: 2.5"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Percentual de acréscimo aplicado ao total quando parcelado
-                      </p>
-                    </div>
+                      {formData.condicoes_comerciais.tipo === "parcelado" && (
+                        <div>
+                          <Label>Acréscimo (%)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.condicoes_comerciais.acrescimo_percentual || 0}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                condicoes_comerciais: {
+                                  ...formData.condicoes_comerciais,
+                                  acrescimo_percentual: parseFloat(e.target.value) || 0,
+                                },
+                              })
+                            }
+                            placeholder="Ex: 2.5"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Percentual de acréscimo aplicado ao total quando parcelado
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <div>
@@ -1603,11 +1682,21 @@ export default function PropostaFormDialog({
                         value={formData.condicoes_comerciais.prazo_locacao_meses || 12}
                         onChange={(e) => {
                           const prazo = parseInt(e.target.value) || 12;
+                          
+                          // Calcular data final se data inicial estiver preenchida
+                          let dataFim = "";
+                          if (formData.condicoes_comerciais.prazo_inicio_contrato) {
+                            const dataInicio = new Date(formData.condicoes_comerciais.prazo_inicio_contrato);
+                            dataInicio.setMonth(dataInicio.getMonth() + prazo);
+                            dataFim = dataInicio.toISOString().split('T')[0];
+                          }
+                          
                           setFormData({
                             ...formData,
                             condicoes_comerciais: {
                               ...formData.condicoes_comerciais,
                               prazo_locacao_meses: prazo,
+                              prazo_fim_contrato: dataFim || formData.condicoes_comerciais.prazo_fim_contrato,
                             },
                           });
                           
@@ -1625,6 +1714,103 @@ export default function PropostaFormDialog({
                       </p>
                     </div>
                   )}
+
+                  <div className="md:col-span-2 border-t pt-4 mt-4">
+                    <Label className="text-base font-semibold">Prazo do Contrato</Label>
+                    <div className="grid gap-4 md:grid-cols-2 mt-2">
+                      <div>
+                        <Label>
+                          Prazo Inicial do Contrato
+                          {(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && (
+                            <span className="text-destructive ml-1">*</span>
+                          )}
+                        </Label>
+                        <Input
+                          type="date"
+                          value={formData.condicoes_comerciais.prazo_inicio_contrato}
+                          onChange={(e) => {
+                            const dataInicio = e.target.value;
+                            let dataFim = "";
+                            
+                            // Se for locação e tiver prazo definido, calcular data final automaticamente
+                            if ((formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && 
+                                formData.condicoes_comerciais.prazo_locacao_meses) {
+                              const inicio = new Date(dataInicio);
+                              inicio.setMonth(inicio.getMonth() + formData.condicoes_comerciais.prazo_locacao_meses);
+                              dataFim = inicio.toISOString().split('T')[0];
+                            }
+                            
+                            setFormData({
+                              ...formData,
+                              condicoes_comerciais: {
+                                ...formData.condicoes_comerciais,
+                                prazo_inicio_contrato: dataInicio,
+                                prazo_fim_contrato: dataFim || formData.condicoes_comerciais.prazo_fim_contrato,
+                              },
+                            });
+                          }}
+                          required={formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada'}
+                        />
+                      </div>
+                      <div>
+                        <Label>
+                          Prazo Final do Contrato
+                          {(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && (
+                            <span className="text-destructive ml-1">*</span>
+                          )}
+                        </Label>
+                        <Input
+                          type="date"
+                          value={formData.condicoes_comerciais.prazo_fim_contrato}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              condicoes_comerciais: {
+                                ...formData.condicoes_comerciais,
+                                prazo_fim_contrato: e.target.value,
+                              },
+                            })
+                          }
+                          required={formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada'}
+                          disabled={(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && 
+                                    formData.condicoes_comerciais.prazo_inicio_contrato && 
+                                    formData.condicoes_comerciais.prazo_locacao_meses}
+                        />
+                      </div>
+                    </div>
+                    {(formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formData.condicoes_comerciais.prazo_inicio_contrato && formData.condicoes_comerciais.prazo_locacao_meses
+                          ? "Data final calculada automaticamente. Preencha a data inicial e o prazo em meses."
+                          : "Campos obrigatórios para propostas de locação"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-2 border-t pt-4 mt-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="gerar_contas_receber"
+                        checked={formData.gerar_contas_receber}
+                        onCheckedChange={(checked) =>
+                          setFormData({
+                            ...formData,
+                            gerar_contas_receber: checked === true,
+                          })
+                        }
+                      />
+                      <Label htmlFor="gerar_contas_receber" className="text-base font-semibold cursor-pointer">
+                        Gerar Contas a Receber automaticamente
+                      </Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      {formData.tipo_operacao.includes('locacao')
+                        ? `Serão criadas ${formData.condicoes_comerciais.prazo_locacao_meses || 1} contas a receber (mensalidades)`
+                        : formData.condicoes_comerciais.tipo === "parcelado" 
+                          ? `Serão criadas ${formData.condicoes_comerciais.parcelas || 1} contas a receber (uma por parcela)`
+                          : "Será criada 1 conta a receber com o valor total"}
+                    </p>
+                  </div>
                 </div>
               </TabsContent>
 

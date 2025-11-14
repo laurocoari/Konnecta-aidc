@@ -33,6 +33,7 @@ import { ARFormDialog } from "@/components/Financeiro/ARFormDialog";
 import { ARPaymentDialog } from "@/components/Financeiro/ARPaymentDialog";
 import { ExportButton } from "@/components/ExportButton";
 import { Edit } from "lucide-react";
+import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
 
 export default function ContasReceber() {
   const [accountsReceivable, setAccountsReceivable] = useState<any[]>([]);
@@ -41,8 +42,10 @@ export default function ContasReceber() {
   const [filterStatus, setFilterStatus] = useState<string>("todos");
   const [arDialogOpen, setArDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedAR, setSelectedAR] = useState<any>(null);
   const [editingAR, setEditingAR] = useState<any>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
 
   useEffect(() => {
     loadAccountsReceivable();
@@ -68,9 +71,83 @@ export default function ContasReceber() {
 
       if (error) throw error;
 
+      // Buscar pedidos relacionados para contas com origem "pedido_venda"
+      const pedidoIds = (data || [])
+        .filter(ar => ar.origem === "pedido_venda" && ar.referencia_id)
+        .map(ar => ar.referencia_id);
+
+      let pedidosMap: Record<string, any> = {};
+      if (pedidoIds.length > 0) {
+        const { data: pedidos } = await supabase
+          .from("sales_orders")
+          .select("id, numero_pedido")
+          .in("id", pedidoIds);
+        
+        if (pedidos) {
+          pedidos.forEach(p => {
+            pedidosMap[p.id] = p;
+          });
+        }
+      }
+
+      // Buscar propostas relacionadas e depois pedidos delas
+      const propostaIds = (data || [])
+        .filter(ar => ar.origem === "proposta" && ar.referencia_id)
+        .map(ar => ar.referencia_id);
+
+      let propostasMap: Record<string, any> = {};
+      let propostaPedidosMap: Record<string, any> = {};
+      
+      if (propostaIds.length > 0) {
+        // Buscar propostas
+        const { data: propostas } = await supabase
+          .from("proposals")
+          .select("id, codigo, tipo_operacao, condicoes_comerciais")
+          .in("id", propostaIds);
+        
+        if (propostas) {
+          propostas.forEach(p => {
+            propostasMap[p.id] = p;
+          });
+
+          // Buscar pedidos relacionados às propostas
+          const { data: pedidosPropostas } = await supabase
+            .from("sales_orders")
+            .select("id, numero_pedido, proposta_id")
+            .in("proposta_id", propostaIds);
+          
+          if (pedidosPropostas) {
+            pedidosPropostas.forEach(p => {
+              propostaPedidosMap[p.proposta_id] = p;
+            });
+          }
+        }
+      }
+
+      // Adicionar dados relacionados às contas
+      const dataWithRelations = (data || []).map(ar => {
+        let pedido = null;
+        let proposta = null;
+        
+        if (ar.origem === "pedido_venda" && ar.referencia_id) {
+          pedido = pedidosMap[ar.referencia_id] || null;
+        } else if (ar.origem === "proposta" && ar.referencia_id) {
+          proposta = propostasMap[ar.referencia_id] || null;
+          if (proposta) {
+            pedido = propostaPedidosMap[ar.referencia_id] || null;
+          }
+        }
+        
+        return {
+          ...ar,
+          pedido,
+          proposta,
+        };
+      });
+
       // Atualizar status de atrasados
       const hoje = new Date().toISOString().split("T")[0];
-      const arsToUpdate = (data || []).filter(
+      const arsToUpdate = dataWithRelations.filter(
         (ar) =>
           ar.status === "pendente" &&
           ar.data_vencimento < hoje &&
@@ -84,11 +161,26 @@ export default function ContasReceber() {
             .update({ status: "atrasado" })
             .eq("id", ar.id);
         }
-        // Recarregar dados
+        // Recarregar dados atualizados
         const { data: updatedData } = await query;
-        setAccountsReceivable(updatedData || []);
+        const updatedWithRelations = (updatedData || []).map(ar => {
+          let pedido = null;
+          let proposta = null;
+          
+          if (ar.origem === "pedido_venda" && ar.referencia_id) {
+            pedido = pedidosMap[ar.referencia_id] || null;
+          } else if (ar.origem === "proposta" && ar.referencia_id) {
+            proposta = propostasMap[ar.referencia_id] || null;
+            if (proposta) {
+              pedido = propostaPedidosMap[ar.referencia_id] || null;
+            }
+          }
+          
+          return { ...ar, pedido, proposta };
+        });
+        setAccountsReceivable(updatedWithRelations);
       } else {
-        setAccountsReceivable(data || []);
+        setAccountsReceivable(dataWithRelations);
       }
     } catch (error: any) {
       console.error("Error loading AR:", error);
@@ -303,6 +395,7 @@ export default function ContasReceber() {
             <TableHeader>
               <TableRow>
                 <TableHead>Cliente</TableHead>
+                <TableHead>Pedido</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead>Valor Total</TableHead>
                 <TableHead>Valor Pago</TableHead>
@@ -333,6 +426,30 @@ export default function ContasReceber() {
                           </div>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {ar.pedido ? (
+                        <button
+                          onClick={() => {
+                            setSelectedOrder({ id: ar.pedido.id, numero_pedido: ar.pedido.numero_pedido });
+                            setDetailDialogOpen(true);
+                          }}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          {ar.pedido.numero_pedido}
+                        </button>
+                      ) : ar.proposta ? (
+                        <div className="text-muted-foreground text-sm">
+                          <div>{ar.proposta.codigo}</div>
+                          {ar.proposta.tipo_operacao?.includes('locacao') && ar.proposta.condicoes_comerciais?.prazo_inicio_contrato && (
+                            <div className="text-xs mt-1">
+                              Contrato: {new Date(ar.proposta.condicoes_comerciais.prazo_inicio_contrato).toLocaleDateString('pt-BR')} a {ar.proposta.condicoes_comerciais.prazo_fim_contrato ? new Date(ar.proposta.condicoes_comerciais.prazo_fim_contrato).toLocaleDateString('pt-BR') : 'N/A'}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
                     </TableCell>
                     <TableCell>{ar.origem}</TableCell>
                     <TableCell className="font-semibold">
@@ -403,6 +520,16 @@ export default function ContasReceber() {
         onSuccess={() => {
           loadAccountsReceivable();
           setSelectedAR(null);
+        }}
+      />
+
+      <SalesOrderDetailDialog
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+        salesOrder={selectedOrder}
+        onSuccess={() => {
+          loadAccountsReceivable();
+          setSelectedOrder(null);
         }}
       />
     </div>

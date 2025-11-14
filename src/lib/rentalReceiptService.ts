@@ -155,9 +155,9 @@ export async function createRentalReceiptFromProposal(
 
     if (propostaError) throw propostaError;
 
-    // Validar que é locação direta
-    if (proposta.tipo_operacao !== "locacao_direta") {
-      throw new Error("Proposta deve ser do tipo locação direta");
+    // Validar que é locação (direta ou agenciada)
+    if (!proposta.tipo_operacao.includes("locacao")) {
+      throw new Error("Proposta deve ser do tipo locação");
     }
 
     // Validar que há itens
