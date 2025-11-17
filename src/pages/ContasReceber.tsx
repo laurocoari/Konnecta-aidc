@@ -32,8 +32,9 @@ import { toast } from "sonner";
 import { ARFormDialog } from "@/components/Financeiro/ARFormDialog";
 import { ARPaymentDialog } from "@/components/Financeiro/ARPaymentDialog";
 import { ExportButton } from "@/components/ExportButton";
-import { Edit } from "lucide-react";
+import { Edit, FileText } from "lucide-react";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
+import { RentalReceiptFromARDialog } from "@/components/Financeiro/RentalReceiptFromARDialog";
 
 export default function ContasReceber() {
   const [accountsReceivable, setAccountsReceivable] = useState<any[]>([]);
@@ -43,6 +44,7 @@ export default function ContasReceber() {
   const [arDialogOpen, setArDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   const [selectedAR, setSelectedAR] = useState<any>(null);
   const [editingAR, setEditingAR] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
@@ -77,16 +79,36 @@ export default function ContasReceber() {
         .map(ar => ar.referencia_id);
 
       let pedidosMap: Record<string, any> = {};
+      let pedidoPropostasMap: Record<string, any> = {};
+      
       if (pedidoIds.length > 0) {
         const { data: pedidos } = await supabase
           .from("sales_orders")
-          .select("id, numero_pedido")
+          .select("id, numero_pedido, proposta_id")
           .in("id", pedidoIds);
         
         if (pedidos) {
           pedidos.forEach(p => {
             pedidosMap[p.id] = p;
           });
+
+          // Buscar propostas relacionadas aos pedidos
+          const propostaIdsFromPedidos = pedidos
+            .filter(p => p.proposta_id)
+            .map(p => p.proposta_id);
+          
+          if (propostaIdsFromPedidos.length > 0) {
+            const { data: propostasPedidos } = await supabase
+              .from("proposals")
+              .select("id, codigo, tipo_operacao, condicoes_comerciais")
+              .in("id", propostaIdsFromPedidos);
+            
+            if (propostasPedidos) {
+              propostasPedidos.forEach(prop => {
+                pedidoPropostasMap[prop.id] = prop;
+              });
+            }
+          }
         }
       }
 
@@ -131,6 +153,13 @@ export default function ContasReceber() {
         
         if (ar.origem === "pedido_venda" && ar.referencia_id) {
           pedido = pedidosMap[ar.referencia_id] || null;
+          // Se o pedido tem proposta relacionada, incluir nos dados do pedido
+          if (pedido && pedido.proposta_id) {
+            const propostaRelacionada = pedidoPropostasMap[pedido.proposta_id];
+            if (propostaRelacionada) {
+              pedido = { ...pedido, proposta: propostaRelacionada };
+            }
+          }
         } else if (ar.origem === "proposta" && ar.referencia_id) {
           proposta = propostasMap[ar.referencia_id] || null;
           if (proposta) {
@@ -169,6 +198,13 @@ export default function ContasReceber() {
           
           if (ar.origem === "pedido_venda" && ar.referencia_id) {
             pedido = pedidosMap[ar.referencia_id] || null;
+            // Se o pedido tem proposta relacionada, incluir nos dados do pedido
+            if (pedido && pedido.proposta_id) {
+              const propostaRelacionada = pedidoPropostasMap[pedido.proposta_id];
+              if (propostaRelacionada) {
+                pedido = { ...pedido, proposta: propostaRelacionada };
+              }
+            }
           } else if (ar.origem === "proposta" && ar.referencia_id) {
             proposta = propostasMap[ar.referencia_id] || null;
             if (proposta) {
@@ -204,6 +240,16 @@ export default function ContasReceber() {
   const handleRegisterPayment = (ar: any) => {
     setSelectedAR(ar);
     setPaymentDialogOpen(true);
+  };
+
+  const handleGenerateReceipt = (ar: any) => {
+    setSelectedAR(ar);
+    setReceiptDialogOpen(true);
+  };
+
+  const isLocacao = (ar: any) => {
+    const tipoOperacao = ar.pedido?.proposta?.tipo_operacao || ar.proposta?.tipo_operacao;
+    return tipoOperacao?.includes("locacao");
   };
 
   const getStatusBadge = (status: string) => {
@@ -254,6 +300,19 @@ export default function ContasReceber() {
       style: "currency",
       currency: "BRL",
     }).format(value || 0);
+  };
+
+  const formatTipoOperacao = (tipoOperacao: string | undefined) => {
+    if (!tipoOperacao) return "-";
+    
+    const tipos: Record<string, string> = {
+      venda_direta: "Venda Direta",
+      venda_agenciada: "Venda Agenciada",
+      locacao_direta: "Locação Direta",
+      locacao_agenciada: "Locação Agenciada",
+    };
+    
+    return tipos[tipoOperacao] || tipoOperacao;
   };
 
   const filteredAR = accountsReceivable.filter((ar) => {
@@ -396,6 +455,7 @@ export default function ContasReceber() {
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Pedido</TableHead>
+                <TableHead>Tipo de Negociação</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead>Valor Total</TableHead>
                 <TableHead>Valor Pago</TableHead>
@@ -429,15 +489,23 @@ export default function ContasReceber() {
                     </TableCell>
                     <TableCell>
                       {ar.pedido ? (
-                        <button
-                          onClick={() => {
-                            setSelectedOrder({ id: ar.pedido.id, numero_pedido: ar.pedido.numero_pedido });
-                            setDetailDialogOpen(true);
-                          }}
-                          className="text-primary hover:underline font-medium"
-                        >
-                          {ar.pedido.numero_pedido}
-                        </button>
+                        <div>
+                          <button
+                            onClick={() => {
+                              setSelectedOrder({ id: ar.pedido.id, numero_pedido: ar.pedido.numero_pedido });
+                              setDetailDialogOpen(true);
+                            }}
+                            className="text-primary hover:underline font-medium"
+                          >
+                            {ar.pedido.numero_pedido}
+                          </button>
+                          {/* Mostrar período de contrato se for locação */}
+                          {ar.pedido.proposta?.tipo_operacao?.includes('locacao') && ar.pedido.proposta.condicoes_comerciais?.prazo_inicio_contrato && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Contrato: {new Date(ar.pedido.proposta.condicoes_comerciais.prazo_inicio_contrato).toLocaleDateString('pt-BR')} a {ar.pedido.proposta.condicoes_comerciais.prazo_fim_contrato ? new Date(ar.pedido.proposta.condicoes_comerciais.prazo_fim_contrato).toLocaleDateString('pt-BR') : 'N/A'}
+                            </div>
+                          )}
+                        </div>
                       ) : ar.proposta ? (
                         <div className="text-muted-foreground text-sm">
                           <div>{ar.proposta.codigo}</div>
@@ -449,6 +517,11 @@ export default function ContasReceber() {
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {formatTipoOperacao(
+                        ar.pedido?.proposta?.tipo_operacao || ar.proposta?.tipo_operacao
                       )}
                     </TableCell>
                     <TableCell>{ar.origem}</TableCell>
@@ -469,7 +542,7 @@ export default function ContasReceber() {
                     </TableCell>
                     <TableCell>{getStatusBadge(ar.status)}</TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -479,6 +552,17 @@ export default function ContasReceber() {
                           <Edit className="h-4 w-4" />
                           Editar
                         </Button>
+                        {isLocacao(ar) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleGenerateReceipt(ar)}
+                            className="gap-2"
+                          >
+                            <FileText className="h-4 w-4" />
+                            Gerar Recibo
+                          </Button>
+                        )}
                         {saldo > 0 && (
                           <Button
                             variant="outline"
@@ -530,6 +614,21 @@ export default function ContasReceber() {
         onSuccess={() => {
           loadAccountsReceivable();
           setSelectedOrder(null);
+        }}
+      />
+
+      <RentalReceiptFromARDialog
+        open={receiptDialogOpen}
+        onOpenChange={(open) => {
+          setReceiptDialogOpen(open);
+          if (!open) {
+            setSelectedAR(null);
+          }
+        }}
+        accountReceivable={selectedAR}
+        onSuccess={() => {
+          loadAccountsReceivable();
+          setSelectedAR(null);
         }}
       />
     </div>

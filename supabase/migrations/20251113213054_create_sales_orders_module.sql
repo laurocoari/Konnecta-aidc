@@ -334,3 +334,5 @@ COMMENT ON COLUMN public.sales_orders.numero_pedido IS 'Número sequencial únic
 COMMENT ON COLUMN public.sales_orders.proposta_id IS 'ID da proposta que originou este pedido (se aplicável)';
 COMMENT ON FUNCTION create_sales_order_from_proposal() IS 'Cria automaticamente um pedido de venda quando uma proposta é aprovada';
 
+
+

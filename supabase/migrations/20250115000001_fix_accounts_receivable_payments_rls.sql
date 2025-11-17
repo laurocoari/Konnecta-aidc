@@ -87,3 +87,5 @@ CREATE POLICY "Admins can delete payable payments"
   FOR DELETE
   USING (has_role(auth.uid(), 'admin'::user_role));
 
+
+

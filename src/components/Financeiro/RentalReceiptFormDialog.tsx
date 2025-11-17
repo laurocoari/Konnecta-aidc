@@ -396,16 +396,15 @@ export function RentalReceiptFormDialog({
                   Conta Bancária (Opcional)
                 </Label>
                 <Select
-                  value={formData.bank_account_id}
+                  value={formData.bank_account_id || undefined}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, bank_account_id: value })
+                    setFormData({ ...formData, bank_account_id: value || "" })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione uma conta bancária" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhuma</SelectItem>
                     {bankAccounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
                         {account.nome_banco} - {account.agencia} / {account.conta}

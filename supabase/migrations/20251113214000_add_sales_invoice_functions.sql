@@ -227,3 +227,5 @@ CREATE TRIGGER trigger_log_sales_order_changes
 COMMENT ON FUNCTION create_invoice_from_sales_order IS 'Cria fatura e conta a receber a partir de um pedido de venda';
 COMMENT ON FUNCTION log_sales_order_change IS 'Registra logs automáticos de mudanças nos pedidos';
 
+
+

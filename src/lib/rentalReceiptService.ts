@@ -254,3 +254,193 @@ export async function createRentalReceiptFromContract(
   }
 }
 
+/**
+ * Cria um recibo de locação a partir de uma conta a receber de locação
+ */
+export async function createRentalReceiptFromAccountReceivable(
+  accountReceivableId: string,
+  options?: {
+    data_vencimento?: string;
+    periodo_locacao_inicio?: string;
+    periodo_locacao_fim?: string;
+    bank_account_id?: string;
+    observacoes?: string;
+  }
+): Promise<{ id: string; numero_recibo: string; account_receivable_id?: string }> {
+  try {
+    logger.db(`Criando recibo de locação a partir de conta a receber ${accountReceivableId}`);
+
+    // Buscar conta a receber com contato
+    const { data: accountReceivable, error: arError } = await supabase
+      .from("accounts_receivable")
+      .select(`
+        *,
+        contact:contacts(*)
+      `)
+      .eq("id", accountReceivableId)
+      .single();
+
+    if (arError) throw arError;
+    if (!accountReceivable) {
+      throw new Error("Conta a receber não encontrada");
+    }
+
+    // Buscar proposta relacionada
+    let proposta: any = null;
+    let clienteId: string | null = null;
+
+    if (accountReceivable.origem === "proposta" && accountReceivable.referencia_id) {
+      // Buscar proposta diretamente
+      const { data: propostaData, error: propostaError } = await supabase
+        .from("proposals")
+        .select(`
+          *,
+          cliente:clients(id)
+        `)
+        .eq("id", accountReceivable.referencia_id)
+        .single();
+
+      if (propostaError) throw propostaError;
+      proposta = propostaData;
+      clienteId = proposta?.cliente?.id || null;
+    } else if (accountReceivable.origem === "pedido_venda" && accountReceivable.referencia_id) {
+      // Buscar pedido e depois proposta relacionada
+      const { data: pedido, error: pedidoError } = await supabase
+        .from("sales_orders")
+        .select(`
+          *,
+          cliente:clients(id),
+          proposta:proposals(*)
+        `)
+        .eq("id", accountReceivable.referencia_id)
+        .single();
+
+      if (pedidoError) throw pedidoError;
+      proposta = pedido?.proposta;
+      clienteId = pedido?.cliente?.id || null;
+    }
+
+    if (!proposta) {
+      throw new Error("Não foi possível encontrar proposta relacionada à conta a receber");
+    }
+
+    // Validar que é locação (direta ou agenciada)
+    if (!proposta.tipo_operacao || !proposta.tipo_operacao.includes("locacao")) {
+      throw new Error("Conta a receber deve ser de locação (direta ou agenciada)");
+    }
+
+    // Buscar cliente se não encontrado
+    if (!clienteId && accountReceivable.contact_id) {
+      // Tentar buscar cliente através do contact
+      const { data: contact, error: contactError } = await supabase
+        .from("contacts")
+        .select("cliente_id")
+        .eq("id", accountReceivable.contact_id)
+        .single();
+
+      if (!contactError && contact?.cliente_id) {
+        clienteId = contact.cliente_id;
+      }
+    }
+
+    if (!clienteId) {
+      // Buscar cliente da proposta
+      const { data: propostaCompleta, error: propostaCompletaError } = await supabase
+        .from("proposals")
+        .select("cliente_id")
+        .eq("id", proposta.id)
+        .single();
+
+      if (propostaCompletaError) throw propostaCompletaError;
+      clienteId = propostaCompleta.cliente_id;
+    }
+
+    if (!clienteId) {
+      throw new Error("Não foi possível identificar o cliente");
+    }
+
+    // Buscar itens da proposta
+    const { data: propostaItems, error: itemsError } = await supabase
+      .from("proposal_items")
+      .select("*")
+      .eq("proposal_id", proposta.id);
+
+    if (itemsError) throw itemsError;
+
+    if (!propostaItems || propostaItems.length === 0) {
+      throw new Error("Proposta deve ter pelo menos 1 item para gerar recibo");
+    }
+
+    // Calcular período de locação baseado na data de vencimento
+    const dataVencimento = options?.data_vencimento || accountReceivable.data_vencimento;
+    let periodoInicio = options?.periodo_locacao_inicio;
+    let periodoFim = options?.periodo_locacao_fim;
+
+    if (!periodoInicio && dataVencimento) {
+      // Se não informado, usar data de vencimento como início do período
+      const dataVenc = new Date(dataVencimento);
+      periodoInicio = dataVenc.toISOString().split("T")[0];
+      
+      // Se houver período de contrato na proposta, usar
+      if (proposta.condicoes_comerciais?.prazo_inicio_contrato) {
+        periodoInicio = proposta.condicoes_comerciais.prazo_inicio_contrato;
+      }
+    }
+
+    if (!periodoFim && periodoInicio) {
+      // Calcular fim do período (1 mês após início)
+      const dataInicio = new Date(periodoInicio);
+      dataInicio.setMonth(dataInicio.getMonth() + 1);
+      periodoFim = dataInicio.toISOString().split("T")[0];
+      
+      // Se houver período de contrato na proposta, usar
+      if (proposta.condicoes_comerciais?.prazo_fim_contrato) {
+        periodoFim = proposta.condicoes_comerciais.prazo_fim_contrato;
+      }
+    }
+
+    // Montar itens do recibo
+    const items = propostaItems.map((item: any) => ({
+      product_id: item.product_id,
+      descricao: item.descricao || `Item ${item.product_id}`,
+      quantidade: item.quantidade,
+      valor_unitario: parseFloat(item.valor_unitario || item.preco_unitario || 0),
+    }));
+
+    // Criar recibo
+    const receiptResult = await createRentalReceipt({
+      cliente_id: clienteId,
+      proposta_id: proposta.id,
+      data_emissao: accountReceivable.data_emissao || new Date().toISOString().split("T")[0],
+      data_vencimento: dataVencimento,
+      periodo_locacao_inicio: periodoInicio,
+      periodo_locacao_fim: periodoFim,
+      numero_contrato: proposta.numero_contrato,
+      bank_account_id: options?.bank_account_id,
+      observacoes: options?.observacoes || accountReceivable.observacoes || `Mensalidade - Conta a receber ${accountReceivableId}`,
+      items,
+    });
+
+    // Atualizar recibo com account_receivable_id se o campo existir
+    try {
+      await supabase
+        .from("rental_receipts")
+        .update({ account_receivable_id: accountReceivableId })
+        .eq("id", receiptResult.id);
+    } catch (updateError) {
+      // Campo pode não existir ainda, não é crítico
+      logger.warn("Não foi possível atualizar account_receivable_id no recibo:", updateError);
+    }
+
+    logger.db(`Recibo criado com sucesso a partir de conta a receber: ${receiptResult.numero_recibo}`);
+
+    return {
+      ...receiptResult,
+      account_receivable_id: accountReceivableId,
+    };
+  } catch (error: any) {
+    logger.error("Erro ao criar recibo a partir de conta a receber:", error);
+    throw error;
+  }
+}
+

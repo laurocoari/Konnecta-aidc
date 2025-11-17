@@ -78,7 +78,7 @@ export function SalesOrderDetailDialog({
           *,
           cliente:clients(id, nome, cnpj, email, telefone, cidade, estado),
           vendedor:profiles!sales_orders_vendedor_id_fkey(id, full_name),
-          proposta:proposals(id, codigo, versao),
+          proposta:proposals(id, codigo, versao, tipo_operacao, condicoes_comerciais),
           sales_order_items(
             *,
             product:products(id, nome, codigo, sku_interno)
@@ -324,6 +324,27 @@ export function SalesOrderDetailDialog({
                           >
                             {orderData.proposta.codigo} v{orderData.proposta.versao}
                           </Button>
+                        </div>
+                      )}
+                      {/* Mostrar período de contrato se for locação */}
+                      {orderData?.proposta?.tipo_operacao?.includes('locacao') && orderData.proposta.condicoes_comerciais?.prazo_inicio_contrato && (
+                        <div>
+                          <span className="text-muted-foreground">Período de Contrato:</span>{" "}
+                          <span className="font-medium">
+                            {format(
+                              new Date(orderData.proposta.condicoes_comerciais.prazo_inicio_contrato),
+                              "dd/MM/yyyy",
+                              { locale: ptBR }
+                            )}
+                            {" a "}
+                            {orderData.proposta.condicoes_comerciais.prazo_fim_contrato
+                              ? format(
+                                  new Date(orderData.proposta.condicoes_comerciais.prazo_fim_contrato),
+                                  "dd/MM/yyyy",
+                                  { locale: ptBR }
+                                )
+                              : "N/A"}
+                          </span>
                         </div>
                       )}
                     </div>
