@@ -55,6 +55,9 @@ export function ProdutoFormDialog({
     galeria: [],
     brand_id: "",
     custo_medio: "",
+    custo_dolar: "",
+    moeda_preferencial: "BRL",
+    codigo_fabricante: "",
     margem_lucro: "",
     valor_venda: "",
     valor_locacao: "",
@@ -106,7 +109,8 @@ export function ProdutoFormDialog({
   }, [formData.brand_id]);
 
   useEffect(() => {
-    if (product) {
+    if (product && product.id) {
+      // Produto existente - modo edição
       const productData = {
         sku_interno: product.sku_interno || "",
         codigo: product.codigo || "",
@@ -119,6 +123,53 @@ export function ProdutoFormDialog({
         galeria: product.galeria || [],
         brand_id: product.brand_id || "",
         custo_medio: product.custo_medio || "",
+        custo_dolar: product.custo_dolar || "",
+        moeda_preferencial: product.moeda_preferencial || "BRL",
+        codigo_fabricante: product.codigo_fabricante || "",
+        margem_lucro: product.margem_lucro || "",
+        valor_venda: product.valor_venda || "",
+        valor_locacao: product.valor_locacao || "",
+        unidade: product.unidade || "un",
+        estoque_atual: product.estoque_atual || 0,
+        estoque_minimo: product.estoque_minimo || 0,
+        localizacao: product.localizacao || "",
+        ncm: product.ncm || "",
+        ean: product.ean || "",
+        cfop: product.cfop || "",
+        cst: product.cst || "",
+        origem: product.origem || "0",
+        icms: product.icms || "",
+        ipi: product.ipi || "",
+        pis: product.pis || "",
+        cofins: product.cofins || "",
+        observacoes_fiscais: product.observacoes_fiscais || "",
+        status: product.status || "ativo",
+        especificacoes: product.especificacoes || [],
+        videos: product.videos || [],
+      };
+      setFormData(productData);
+      
+      // Carregar marca e fornecedores se houver brand_id
+      if (product.brand_id) {
+        loadBrandAndSuppliers(product.brand_id);
+      }
+    } else if (product && !product.id) {
+      // Produto parcial (para pré-preenchimento) - modo criação
+      const productData = {
+        sku_interno: "",
+        codigo: "",
+        nome: product.nome || "",
+        categoria: product.categoria || "",
+        category_id: product.category_id || "",
+        tipo: product.tipo || "venda",
+        descricao: product.descricao || "",
+        imagem_principal: product.imagem_principal || "",
+        galeria: product.galeria || [],
+        brand_id: product.brand_id || "",
+        custo_medio: product.custo_medio || "",
+        custo_dolar: product.custo_dolar || "",
+        moeda_preferencial: product.moeda_preferencial || "BRL",
+        codigo_fabricante: product.codigo_fabricante || "",
         margem_lucro: product.margem_lucro || "",
         valor_venda: product.valor_venda || "",
         valor_locacao: product.valor_locacao || "",
@@ -160,6 +211,9 @@ export function ProdutoFormDialog({
         galeria: [],
         brand_id: "",
         custo_medio: "",
+        custo_dolar: "",
+        moeda_preferencial: "BRL",
+        codigo_fabricante: "",
         margem_lucro: "",
         valor_venda: "",
         valor_locacao: "",
@@ -419,6 +473,9 @@ export function ProdutoFormDialog({
         category_id: cleanUUID(formData.category_id),
         // Campos numéricos
         custo_medio: formData.custo_medio ? parseFloat(formData.custo_medio) : null,
+        custo_dolar: formData.custo_dolar ? parseFloat(formData.custo_dolar) : null,
+        moeda_preferencial: formData.moeda_preferencial || "BRL",
+        codigo_fabricante: cleanString(formData.codigo_fabricante),
         margem_lucro: formData.margem_lucro ? parseFloat(formData.margem_lucro) : null,
         valor_venda: formData.valor_venda ? parseFloat(formData.valor_venda) : null,
         valor_locacao: formData.valor_locacao ? parseFloat(formData.valor_locacao) : null,
@@ -444,7 +501,57 @@ export function ProdutoFormDialog({
         delete dataToSave.sku_interno;
       }
 
-      if (product) {
+      // Se codigo estiver vazio ou não fornecido, gerar um código único
+      if (!dataToSave.codigo || dataToSave.codigo.trim() === '') {
+        // Gerar código único baseado em timestamp + random
+        // Para novos produtos, verificamos se já existe antes de usar
+        let generatedCode = '';
+        let attempts = 0;
+        const maxAttempts = 5;
+        
+        while (attempts < maxAttempts) {
+          const timestamp = Date.now();
+          const random = Math.floor(Math.random() * 10000);
+          generatedCode = `PROD-${timestamp}-${random}`;
+          attempts++;
+          
+          // Verificar se já existe (apenas para novos produtos)
+          if (!product || !product.id) {
+            const { data: existingProduct } = await supabase
+              .from("products")
+              .select("id")
+              .eq("codigo", generatedCode)
+              .maybeSingle();
+            
+            if (!existingProduct) {
+              break; // Código único encontrado
+            }
+          } else {
+            break; // Modo edição, não precisa verificar
+          }
+        }
+        
+        dataToSave.codigo = generatedCode;
+      } else {
+        // Código fornecido - verificar se já existe (apenas para novos produtos)
+        if (!product || !product.id) {
+          const { data: existingProduct } = await supabase
+            .from("products")
+            .select("id")
+            .eq("codigo", dataToSave.codigo)
+            .maybeSingle();
+
+          if (existingProduct) {
+            // Código já existe, gerar novo
+            const timestamp = Date.now();
+            const random = Math.floor(Math.random() * 10000);
+            dataToSave.codigo = `PROD-${timestamp}-${random}`;
+            toast.warning("Código já existia, foi gerado um novo automaticamente.");
+          }
+        }
+      }
+
+      if (product && product.id) {
         // Update existing product
         const { error } = await supabase
           .from("products")
@@ -718,6 +825,30 @@ export function ProdutoFormDialog({
             <TabsContent value="comercial" className="space-y-4 mt-4">
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
+                  <Label htmlFor="codigo_fabricante">Part Number / Código Fabricante</Label>
+                  <Input
+                    id="codigo_fabricante"
+                    value={formData.codigo_fabricante}
+                    onChange={(e) => handleChange("codigo_fabricante", e.target.value)}
+                    placeholder="ZT23142-T0A000FZ_SC"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="moeda_preferencial">Moeda Preferencial</Label>
+                  <Select
+                    value={formData.moeda_preferencial}
+                    onValueChange={(value) => handleChange("moeda_preferencial", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BRL">Real (BRL)</SelectItem>
+                      <SelectItem value="USD">Dólar (USD)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="custo_medio">Custo Médio (R$)</Label>
                   <Input
                     id="custo_medio"
@@ -727,6 +858,26 @@ export function ProdutoFormDialog({
                     onChange={(e) => handleChange("custo_medio", e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="custo_dolar">Custo em Dólar (US$)</Label>
+                  <Input
+                    id="custo_dolar"
+                    type="number"
+                    step="0.01"
+                    value={formData.custo_dolar}
+                    onChange={(e) => handleChange("custo_dolar", e.target.value)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Custo do produto em dólar (para importações)
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="margem_lucro">Margem de Lucro (%)</Label>
                   <Input

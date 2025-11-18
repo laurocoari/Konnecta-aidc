@@ -29,10 +29,14 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Brain,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { CotacaoFormDialog } from "@/components/Cotacoes/CotacaoFormDialog";
+import { CotacaoEditDialog } from "@/components/Cotacoes/CotacaoEditDialog";
+import { ImportacaoInteligenteDialog } from "@/components/Cotacoes/ImportacaoInteligenteDialog";
+import { RevisaoCotacaoDialog } from "@/components/Cotacoes/RevisaoCotacaoDialog";
+import { findBestProductMatch } from "@/lib/productMatching";
 
 export default function CotacoesCompras() {
   const [cotações, setCotações] = useState<any[]>([]);
@@ -46,6 +50,9 @@ export default function CotacoesCompras() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCotacao, setSelectedCotacao] = useState<any>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [revisaoDialogOpen, setRevisaoDialogOpen] = useState(false);
+  const [extractedData, setExtractedData] = useState<any>(null);
 
   useEffect(() => {
     loadCotações();
@@ -61,11 +68,11 @@ export default function CotacoesCompras() {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from("product_quotes")
+        .from("cotacoes_compras")
         .select(`
           *,
-          product:products(id, nome, codigo),
-          supplier:suppliers(id, nome, cnpj)
+          supplier:suppliers(id, nome, cnpj),
+          itens:cotacoes_compras_itens(count)
         `)
         .order("data_cotacao", { ascending: false });
 
@@ -101,18 +108,14 @@ export default function CotacoesCompras() {
     if (searchTerm) {
       filtered = filtered.filter(
         (c) =>
-          c.product?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          c.product?.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          c.supplier?.nome?.toLowerCase().includes(searchTerm.toLowerCase())
+          c.numero_cotacao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          c.supplier?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          c.distribuidor?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (filterStatus !== "todos") {
       filtered = filtered.filter((c) => c.status === filterStatus);
-    }
-
-    if (filterProduct !== "todos") {
-      filtered = filtered.filter((c) => c.product_id === filterProduct);
     }
 
     if (filterSupplier !== "todos") {
@@ -126,7 +129,7 @@ export default function CotacoesCompras() {
     const statusConfig: Record<string, { label: string; variant: any }> = {
       ativo: { label: "Ativo", variant: "default" },
       expirado: { label: "Expirado", variant: "secondary" },
-      selecionado: { label: "Selecionado", variant: "outline" },
+      revisar: { label: "Revisar", variant: "destructive" },
       cancelado: { label: "Cancelado", variant: "destructive" },
     };
 
@@ -145,11 +148,6 @@ export default function CotacoesCompras() {
     return new Date(date).toLocaleDateString("pt-BR");
   };
 
-  const handleNew = () => {
-    setSelectedCotacao(null);
-    setDialogOpen(true);
-  };
-
   const handleEdit = (cotacao: any) => {
     setSelectedCotacao(cotacao);
     setDialogOpen(true);
@@ -164,15 +162,17 @@ export default function CotacoesCompras() {
             Gerencie cotações de preços de produtos por fornecedor
           </p>
         </div>
-        <Button className="gap-2" onClick={handleNew}>
-          <Plus className="h-4 w-4" />
-          Nova Cotação
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => setImportDialogOpen(true)}>
+            <Brain className="h-4 w-4" />
+            Importar Cotação (IA)
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
       <Card className="glass-strong p-4">
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -192,19 +192,6 @@ export default function CotacoesCompras() {
               <SelectItem value="expirado">Expirado</SelectItem>
               <SelectItem value="selecionado">Selecionado</SelectItem>
               <SelectItem value="cancelado">Cancelado</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterProduct} onValueChange={setFilterProduct}>
-            <SelectTrigger>
-              <SelectValue placeholder="Produto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os Produtos</SelectItem>
-              {products.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.codigo} - {p.nome}
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
           <Select value={filterSupplier} onValueChange={setFilterSupplier}>
@@ -240,11 +227,11 @@ export default function CotacoesCompras() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Produto</TableHead>
+                <TableHead>Número</TableHead>
                 <TableHead>Fornecedor</TableHead>
-                <TableHead className="text-right">Preço Unitário</TableHead>
-                <TableHead className="text-center">Qtd. Mínima</TableHead>
-                <TableHead>Prazo Entrega</TableHead>
+                <TableHead>Moeda</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-center">Itens</TableHead>
                 <TableHead>Data Cotação</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead>Status</TableHead>
@@ -255,16 +242,8 @@ export default function CotacoesCompras() {
               {filteredCotações.map((cotacao) => (
                 <TableRow key={cotacao.id}>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Package className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <div className="font-medium">
-                          {cotacao.product?.nome || "N/A"}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {cotacao.product?.codigo || ""}
-                        </div>
-                      </div>
+                    <div className="font-medium font-mono">
+                      {cotacao.numero_cotacao || "N/A"}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -273,13 +252,18 @@ export default function CotacoesCompras() {
                       <span>{cotacao.supplier?.nome || "N/A"}</span>
                     </div>
                   </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{cotacao.moeda || "BRL"}</Badge>
+                  </TableCell>
                   <TableCell className="text-right font-semibold">
-                    {formatCurrency(cotacao.preco_unitario)}
+                    {cotacao.moeda === "USD" ? "US$" : "R$"}{" "}
+                    {formatCurrency(cotacao.total_cotacao || 0).replace("R$", "").trim()}
                   </TableCell>
                   <TableCell className="text-center">
-                    {cotacao.quantidade_minima || "-"}
+                    <Badge variant="secondary">
+                      {cotacao.quantidade_itens || 0} item(ns)
+                    </Badge>
                   </TableCell>
-                  <TableCell>{cotacao.prazo_entrega || "-"}</TableCell>
                   <TableCell>{formatDate(cotacao.data_cotacao)}</TableCell>
                   <TableCell>
                     {cotacao.validade ? (
@@ -298,7 +282,7 @@ export default function CotacoesCompras() {
                       size="sm"
                       onClick={() => handleEdit(cotacao)}
                     >
-                      Editar
+                      Ver Itens / Editar
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -308,12 +292,37 @@ export default function CotacoesCompras() {
         </Card>
       )}
 
-      <CotacaoFormDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        cotacao={selectedCotacao}
-        onSuccess={loadCotações}
+      {selectedCotacao && (
+        <CotacaoEditDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          cotacao={selectedCotacao}
+          onSuccess={loadCotações}
+        />
+      )}
+
+      <ImportacaoInteligenteDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onItemsExtracted={(data) => {
+          setExtractedData(data);
+          setImportDialogOpen(false);
+          setRevisaoDialogOpen(true);
+        }}
       />
+
+      {extractedData && (
+        <RevisaoCotacaoDialog
+          open={revisaoDialogOpen}
+          onOpenChange={setRevisaoDialogOpen}
+          extractedData={extractedData}
+          onSuccess={() => {
+            loadCotações();
+            setExtractedData(null);
+            setRevisaoDialogOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

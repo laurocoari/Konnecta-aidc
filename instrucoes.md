@@ -1,216 +1,204 @@
-Quero reorganizar o menu lateral do CRM Konnecta para ficar mais profissional e visualmente organizado por módulos.
-A estrutura geral do menu já existe, mas preciso que você implemente as seguintes melhorias visuais:
+SUPER PROMPT – Ajustar Importação para Criar 1 Cotação com Vários Itens
 
-🎨 1) CATEGORIZAÇÃO POR MÓDULOS COM CORES
+Quero que você ajuste o módulo /cotacoes-compras para que, ao importar itens (via IA, PDF, Excel ou texto puro), o sistema NÃO crie múltiplas cotações, mas sim:
 
-Cada módulo deve ter uma cor padrão consistente para:
+✔️ Criar UMA ÚNICA COTAÇÃO por importação / fornecedor, independentemente se vier:
 
-menu principal
+1 produto
 
-hover
+2 produtos
 
-mini badge
+50 produtos
 
-ícones
+1000 produtos
 
-borda lateral no item ativo
+Todos devem ficar dentro da mesma cotação.
 
-Usar cores suaves (nada neon), seguindo a estética moderna:
+🌐 1) Nova Regra de Criação da Cotação
 
-Cores sugeridas por módulo
+Antes:
+→ O sistema criava 1 cotação por item.
 
-VENDAS – Azul #3B82F6
-PRODUTOS / ESTOQUE – Roxo #8B5CF6
-DOCUMENTOS – Verde #10B981
-COMPRAS – Laranja #F97316
-PARCEIROS – Rosa #EC4899
-FINANCEIRO – Amarelo/Ouro #F59E0B
-ATENDIMENTO / SUPORTE – Ciano #06B6D4
-CONFIGURAÇÕES – Cinza #6B7280
+Agora (implementação obrigatória):
+→ O sistema cria UMA cotação por fornecedor, contendo todos os itens importados.
 
-Essas cores devem ser aplicadas de forma sutil, sem quebrar o layout.
+Detalhes:
 
-🧩 2) UM ÍCONE POR MÓDULO (Fixo, Estilo Lucide Icons)
+Se o usuário selecionar “Fornecedor = ScanSource”, todos os itens devem entrar na mesma cotação.
 
-Cada módulo deve ter um ícone dominante, mesmo quando possuir vários submenus.
+Mesmo que os produtos tenham part numbers diferentes, quantidades diferentes ou preços diferentes → tudo deve ficar em uma única cotação.
 
-Exemplos:
+Número da cotação é único.
 
-VENDAS → ShoppingCart
+Criar cotação somente após o usuário clicar em “Salvar Cotação no Sistema”.
 
-PRODUTOS → Package
+📦 2) Estrutura da Cotação (Nova)
 
-DOCUMENTOS → FileText
+Uma cotação deve ter:
 
-COMPRAS → ShoppingBag
+Cabeçalho:
 
-PARCEIROS → Handshake
+Fornecedor
 
-FINANCEIRO → Banknote
+Moeda (BRL/USD)
 
-SUPORTE → Headset
+Taxa de câmbio (se USD)
 
-CONFIGURAÇÕES → Settings
+Condição de pagamento
 
-Submenus podem usar ícones menores da mesma família, mas o item principal deve ser o destaque.
+Prazo de entrega
 
-🧭 3) ORGANIZAR O MENU EM BLOCOS VISUAIS
+Data da cotação
 
-Criar divisores horizontais com leve opacidade entre categorias:
+Validade
 
-VENDAS
----------------------
-PRODUTOS E ESTOQUE
----------------------
-DOCUMENTOS
----------------------
-COMPRAS
----------------------
-PARCEIROS
----------------------
-FINANCEIRO
----------------------
-SUPORTE
----------------------
-CONFIGURAÇÃO
+Observações gerais
 
+Itens (lista):
 
-Os divisores devem ser discretos, seguindo o tema atual.
+Cada item deve conter:
 
-🟦 4) ITEM ATIVO DESTACADO (LINHA LATERAL COLORIDA)
+Produto vinculado ou novo produto
 
-Adicionar uma linha vertical colorida (esquerda) no item ativo do menu:
+Part number
 
-cor = cor do módulo
+Descrição
 
-3px
+Quantidade
 
-bordas arredondadas
+Preço unitário
 
-Exemplo: ao navegar em “Contas a Receber” → módulo FINANCEIRO → item recebe linha amarela.
+Total
 
-🌟 5) HOVER E SELEÇÃO COM EFEITO SUAVE
+Moeda
 
-Implementar:
+Custo em dólar (se houver)
 
-leve mudança de background no hover
+Status (imediato, revisar, pendente, etc)
 
-opacidade sutil no ícone
+OBS: nada de criar cotações separadas.
 
-transição de 150–200ms
+🔄 3) Ajustar Backend (obrigatório)
 
-Nada pesado — é só um toque de responsividade.
+Quando receber os itens importados:
 
-📌 6) REFATORAÇÃO DE TEXTO DO MENU (OPCIONAL, MAS RECOMENDADO)
+Criar um objeto único cotacao
 
-Sugestão para deixar mais clean:
+Iterar sobre todos os itens importados
 
-VENDAS
+Criar linha dentro da tabela cotacoes_compras_itens apontando para cotacao_id único
 
-CRM de Vendas
+Salvar tudo de uma vez quando o usuário confirmar
 
-Clientes
+🖥️ 4) Ajustar Frontend (lista de cotações)
 
-Funil de Vendas
+Hoje a lista mostra cada item como uma cotação.
+Isso deve mudar.
 
-Tarefas
+Nova listagem:
 
-PRODUTOS
+Cada cotação aparece apenas 1x, com:
 
-Produtos
+Fornecedor
 
-Estoque
+Data da cotação
 
-Marcas
+Validade
 
-DOCUMENTOS
+Status (Ativo, Expirado, Revisar)
 
-Propostas
+Total da cotação
 
-Pedidos de Venda
+Quantidade de itens (ex: “Itens: 3”)
 
-Contratos
+Botão: Ver Itens / Editar
 
-Modelos
+📋 5) Tela de Edição da Cotação (Nova)
 
-COMPRAS
+Ao clicar em “Editar”, abrir:
 
-Fornecedores
+Cabeçalho da cotação
 
-Pedidos de Compra
+(Fornecedor, moeda, taxa, validade, condicão, etc)
 
-Cotações
+Lista dos itens
 
-PARCEIROS
+(tabela com todos os produtos)
 
-Revendedores
+Ações:
 
-Aprovar Parceiros
+Editar item
 
-Oportunidades
+Vincular produto
 
-FINANCEIRO
+Excluir item
 
-Contas a Receber
+Duplicar item
 
-Contas a Pagar
+Adicionar novo item manualmente
 
-Movimentações
+🔗 6) Regras quando importar novamente do mesmo fornecedor
 
-Contas Bancárias
+Se o usuário já tem uma cotação ativa do mesmo fornecedor e importar novamente →
+opção: adicionar novos itens na cotação existente.
 
-SUPORTE
+Popup:
 
-Central de Suporte
+“Você já tem uma cotação ativa de SCANSOURCE.
+Deseja adicionar os novos itens nela ou criar nova cotação?”
 
-Abrir Chamados
+Botões:
 
-Tickets
+Adicionar na cotação existente
 
-CONFIGURAÇÃO
+Criar nova cotação
 
-Usuários
+🚫 7) Não pode mais criar cotação individual por item
 
-Empresas
+Nenhum dos fluxos abaixo pode criar múltiplas cotações:
 
-Integrações
+❌ importação via IA
+❌ importação PDF
+❌ importação Excel
+❌ importação manual
+❌ inserção automática item a item
 
-🧠 7) APLICAÇÃO TÉCNICA (O QUE VOCÊ DEVE CRIAR)
+Todos devem cair na mesma cotação.
 
-Você deve:
+🔥 8) Atualizar Regra de Salvar
 
-atualizar os componentes do menu lateral
+Salvar deve ser possível apenas quando:
 
-implementar uma função que aplique cor por módulo
+Fornecedor selecionado
 
-ajustar os ícones conforme os módulos
+Todos os itens revisados (sem badge “Revisar”)
 
-adicionar a linha lateral colorida no item ativo
+Moeda confirmada
 
-revisar a hierarquia e a identação
+Taxa de câmbio validada
 
-aplicar animações suaves de transição
+Se faltar algo → bloquear botão Salvar Cotação no Sistema.
 
-garantir compatibilidade com dark mode
+🚀 ENTREGA QUE O CURSOR DEVE FAZER
 
-garantir que o layout responda no mobile
+Você deve implementar:
 
-Sem alterar a estrutura funcional do sistema.
+Ajuste total no backend
 
-📦 8) ENTREGA FINAL ESPERADA
+Ajuste total no frontend
 
-No final, você deve entregar:
+Nova regra de criação única de cotações
 
-menu atualizado
+Nova listagem consolidada
 
-estilo visual por módulo
+Nova tela de edição
 
-ícones consolidados
+Popup de decisão para cotação existente
 
-divisores implementados
+Ajustar importação para sempre vincular ao mesmo cotacao_id
 
-efeitos e animações
+Testar o fluxo completo
 
-preview visual para revisão
+🔥 FIM DO SUPER PROMPT
 
-lista de arquivos modificados
+Implemente tudo conforme descrito acima, organizando o módulo /cotacoes-compras para que uma cotação contenha todos os itens importados do mesmo fornecedor.

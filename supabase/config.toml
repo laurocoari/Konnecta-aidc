@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.create-partner]
 verify_jwt = false
+
+[functions.interpretar-cotacao]
+verify_jwt = true

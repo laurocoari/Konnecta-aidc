@@ -5,8 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Settings, User, Bell, Shield, Database, Mail } from "lucide-react";
+import { Settings, User, Bell, Shield, Database, Mail, Brain } from "lucide-react";
 import { toast } from "sonner";
+import { OpenAIConfigSection } from "@/components/Configuracoes/OpenAIConfigSection";
+import { QuoteSettingsSection } from "@/components/Configuracoes/QuoteSettingsSection";
 
 export default function Configuracoes() {
   const handleSave = () => {
@@ -23,12 +25,13 @@ export default function Configuracoes() {
       </div>
 
       <Tabs defaultValue="geral" className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-5">
+        <TabsList className="grid w-full max-w-3xl grid-cols-6">
           <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="notificacoes">Notificações</TabsTrigger>
           <TabsTrigger value="seguranca">Segurança</TabsTrigger>
           <TabsTrigger value="integracao">Integração</TabsTrigger>
+          <TabsTrigger value="ia">IA e Automação</TabsTrigger>
         </TabsList>
 
         <TabsContent value="geral">
@@ -328,6 +331,11 @@ export default function Configuracoes() {
               </Card>
             </div>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="ia" className="space-y-6">
+          <OpenAIConfigSection />
+          <QuoteSettingsSection />
         </TabsContent>
       </Tabs>
     </div>
