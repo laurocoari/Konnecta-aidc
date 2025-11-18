@@ -28,6 +28,7 @@ import {
   CreditCard,
   ChevronDown,
   ChevronRight,
+  FolderTree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,6 +126,7 @@ const menuSections: MenuSection[] = [
       { name: "Produtos", href: "/produtos", icon: Package, roles: ["admin", "comercial"] },
       { name: "Estoque", href: "/estoque", icon: Warehouse, roles: ["admin", "comercial"] },
       { name: "Marcas", href: "/marcas", icon: Package, roles: ["admin"] },
+      { name: "Categorias", href: "/categorias", icon: FolderTree, roles: ["admin"] },
     ],
     defaultOpen: true,
   },

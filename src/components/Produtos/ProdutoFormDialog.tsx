@@ -39,6 +39,7 @@ export function ProdutoFormDialog({
 }: ProdutoFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const [brands, setBrands] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState<any>(null);
   const [brandSuppliers, setBrandSuppliers] = useState<any[]>([]);
@@ -47,6 +48,7 @@ export function ProdutoFormDialog({
     codigo: "",
     nome: "",
     categoria: "",
+    category_id: "",
     tipo: "venda",
     descricao: "",
     imagem_principal: "",
@@ -77,6 +79,7 @@ export function ProdutoFormDialog({
 
   useEffect(() => {
     loadBrands();
+    loadCategories();
   }, []);
 
   // Função para gerar SKU interno automático (opcional, o banco gera automaticamente)
@@ -109,6 +112,7 @@ export function ProdutoFormDialog({
         codigo: product.codigo || "",
         nome: product.nome || "",
         categoria: product.categoria || "",
+        category_id: product.category_id || "",
         tipo: product.tipo || "venda",
         descricao: product.descricao || "",
         imagem_principal: product.imagem_principal || "",
@@ -149,6 +153,7 @@ export function ProdutoFormDialog({
         codigo: "",
         nome: "",
         categoria: "",
+        category_id: "",
         tipo: "venda",
         descricao: "",
         imagem_principal: "",
@@ -194,6 +199,21 @@ export function ProdutoFormDialog({
       setBrands(data || []);
     } catch (error: any) {
       console.error("Error loading brands:", error);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("status", "ativa")
+        .order("nome", { ascending: true });
+
+      if (error) throw error;
+      setCategories(data || []);
+    } catch (error: any) {
+      console.error("Error loading categories:", error);
     }
   };
 
@@ -396,6 +416,7 @@ export function ProdutoFormDialog({
         ...formData,
         // Campos UUID - converter string vazia para null
         brand_id: cleanUUID(formData.brand_id),
+        category_id: cleanUUID(formData.category_id),
         // Campos numéricos
         custo_medio: formData.custo_medio ? parseFloat(formData.custo_medio) : null,
         margem_lucro: formData.margem_lucro ? parseFloat(formData.margem_lucro) : null,
@@ -620,14 +641,27 @@ export function ProdutoFormDialog({
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="categoria">Categoria *</Label>
-                  <Input
-                    id="categoria"
-                    value={formData.categoria}
-                    onChange={(e) => handleChange("categoria", e.target.value)}
-                    placeholder="Hardware, Equipamento, Software..."
+                  <Label htmlFor="category_id">Categoria *</Label>
+                  <Select
+                    value={formData.category_id}
+                    onValueChange={(value) => {
+                      const selectedCategory = categories.find((c) => c.id === value);
+                      handleChange("category_id", value);
+                      handleChange("categoria", selectedCategory?.nome || "");
+                    }}
                     required
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="brand_id">Marca</Label>

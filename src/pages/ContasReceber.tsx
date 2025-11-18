@@ -490,15 +490,15 @@ export default function ContasReceber() {
                     <TableCell>
                       {ar.pedido ? (
                         <div>
-                          <button
-                            onClick={() => {
-                              setSelectedOrder({ id: ar.pedido.id, numero_pedido: ar.pedido.numero_pedido });
-                              setDetailDialogOpen(true);
-                            }}
-                            className="text-primary hover:underline font-medium"
-                          >
-                            {ar.pedido.numero_pedido}
-                          </button>
+                        <button
+                          onClick={() => {
+                            setSelectedOrder({ id: ar.pedido.id, numero_pedido: ar.pedido.numero_pedido });
+                            setDetailDialogOpen(true);
+                          }}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          {ar.pedido.numero_pedido}
+                        </button>
                           {/* Mostrar período de contrato se for locação */}
                           {ar.pedido.proposta?.tipo_operacao?.includes('locacao') && ar.pedido.proposta.condicoes_comerciais?.prazo_inicio_contrato && (
                             <div className="text-xs text-muted-foreground mt-1">

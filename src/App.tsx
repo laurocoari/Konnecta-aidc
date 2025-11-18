@@ -11,6 +11,7 @@ import Clientes from "./pages/Clientes";
 import Funil from "./pages/Funil";
 import Produtos from "./pages/Produtos";
 import Marcas from "./pages/Marcas";
+import Categorias from "./pages/Categorias";
 import Propostas from "./pages/Propostas";
 import PropostaPublica from "./pages/PropostaPublica";
 import Modelos from "./pages/Modelos";
@@ -82,6 +83,7 @@ const App = () => {
                         <Route path="/funil" element={<Funil />} />
                         <Route path="/produtos" element={<Produtos />} />
                         <Route path="/marcas" element={<Marcas />} />
+                        <Route path="/categorias" element={<Categorias />} />
                         <Route path="/propostas" element={<Propostas />} />
                          <Route path="/modelos" element={<Modelos />} />
                          <Route path="/contratos" element={<Contratos />} />

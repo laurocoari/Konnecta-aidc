@@ -19,10 +19,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
+import { 
+  fetchCNPJData, 
+  isValidCNPJLength, 
+  formatEndereco, 
+  formatCEP,
+  formatCNPJ,
+  cleanCNPJ 
+} from "@/lib/cnpjService";
 
 interface ClienteFormDialogProps {
   cliente?: any;
@@ -32,6 +40,8 @@ interface ClienteFormDialogProps {
 export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingCNPJ, setLoadingCNPJ] = useState(false);
+  const [cnpjSearched, setCnpjSearched] = useState<string>("");
   const [formData, setFormData] = useState({
     nome: "",
     cnpj: "",
@@ -63,6 +73,10 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
         cep: cliente.cep || "",
         observacoes: cliente.observacoes || "",
       });
+      // Marcar CNPJ como já buscado se estiver editando
+      if (cliente.cnpj) {
+        setCnpjSearched(cleanCNPJ(cliente.cnpj));
+      }
     } else if (!cliente && open) {
       // Resetar formulário quando abrir para novo cliente
       setFormData({
@@ -79,6 +93,12 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
         cep: "",
         observacoes: "",
       });
+      setCnpjSearched(""); // Resetar flag de busca
+    }
+    
+    // Resetar flag quando dialog fechar
+    if (!open) {
+      setCnpjSearched("");
     }
   }, [cliente, open]);
 
@@ -186,6 +206,77 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
     }
   }, [cliente]);
 
+  // Buscar dados do CNPJ automaticamente quando CNPJ completo for digitado
+  useEffect(() => {
+    // Não executar se dialog não estiver aberto
+    if (!open) return;
+
+    const handleCNPJSearch = async () => {
+      // Só buscar se:
+      // 1. Não estiver carregando
+      // 2. CNPJ tiver 14 dígitos
+      // 3. Não tiver buscado este CNPJ ainda
+      if (loadingCNPJ) return;
+      
+      const cleanedCNPJ = cleanCNPJ(formData.cnpj);
+      
+      if (!isValidCNPJLength(formData.cnpj)) {
+        return;
+      }
+
+      // Se já buscou este CNPJ, não buscar novamente
+      if (cnpjSearched === cleanedCNPJ) {
+        return;
+      }
+
+      // Se estiver editando e o CNPJ não mudou, não buscar
+      if (cliente) {
+        const clienteCNPJ = cleanCNPJ(cliente.cnpj || "");
+        if (cleanedCNPJ === clienteCNPJ && clienteCNPJ.length === 14) {
+          return;
+        }
+      }
+
+      setLoadingCNPJ(true);
+      setCnpjSearched(cleanedCNPJ);
+
+      try {
+        const cnpjData = await fetchCNPJData(formData.cnpj);
+        
+        if (cnpjData) {
+          // Preencher campos automaticamente com dados da API
+          // O usuário pode editar depois se necessário
+          setFormData(prev => ({
+            ...prev,
+            nome: cnpjData.razao_social || prev.nome,
+            cnpj: formatCNPJ(cnpjData.cnpj) || prev.cnpj,
+            endereco: formatEndereco(cnpjData) || prev.endereco,
+            cidade: cnpjData.municipio || prev.cidade,
+            estado: cnpjData.uf || prev.estado,
+            cep: cnpjData.cep ? formatCEP(cnpjData.cep) : prev.cep,
+            telefone: cnpjData.ddd_telefone_1 || prev.telefone,
+            email: cnpjData.email || prev.email,
+          }));
+
+          toast.success("Dados do CNPJ preenchidos automaticamente! Você pode editar se necessário.");
+        }
+      } catch (error: any) {
+        logger.error("Erro ao buscar CNPJ:", error);
+        toast.error(error.message || "Erro ao buscar dados do CNPJ");
+        setCnpjSearched(""); // Permitir tentar novamente
+      } finally {
+        setLoadingCNPJ(false);
+      }
+    };
+
+    // Debounce para não buscar a cada digitação
+    const timeoutId = setTimeout(() => {
+      handleCNPJSearch();
+    }, 1000); // Aguardar 1 segundo após parar de digitar
+
+    return () => clearTimeout(timeoutId);
+  }, [formData.cnpj, open, cliente, loadingCNPJ, cnpjSearched]);
+
   return (
     <Dialog open={open} onOpenChange={(newOpen) => {
       setOpen(newOpen);
@@ -226,13 +317,33 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cnpj">CNPJ *</Label>
-                <Input 
-                  id="cnpj" 
-                  placeholder="00.000.000/0000-00" 
-                  required 
-                  value={formData.cnpj}
-                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                />
+                <div className="relative">
+                  <Input 
+                    id="cnpj" 
+                    placeholder="00.000.000/0000-00" 
+                    required 
+                    value={formData.cnpj}
+                    onChange={(e) => {
+                      setFormData({ ...formData, cnpj: e.target.value });
+                      // Resetar flag de busca se CNPJ mudar
+                      const cleaned = cleanCNPJ(e.target.value);
+                      if (cleaned !== cnpjSearched && cleaned.length < 14) {
+                        setCnpjSearched("");
+                      }
+                    }}
+                    disabled={loadingCNPJ}
+                  />
+                  {loadingCNPJ && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                {isValidCNPJLength(formData.cnpj) && !loadingCNPJ && cnpjSearched !== cleanCNPJ(formData.cnpj) && (
+                  <p className="text-xs text-muted-foreground">
+                    Buscando dados do CNPJ...
+                  </p>
+                )}
               </div>
             </div>
 
