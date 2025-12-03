@@ -1192,14 +1192,12 @@ export default function PropostaFormDialog({
     // Sempre adicionar produtos locais primeiro (base completa)
     produtos.forEach(p => produtosUnicos.set(p.id, p));
     
-    // Se há busca com 2+ caracteres e encontrou resultados no Supabase, adicionar/atualizar com produtos da busca
-    // Isso garante que produtos encontrados no Supabase (que podem não estar nos locais) sejam incluídos
-    if (searchProduto && searchProduto.trim().length >= 2 && produtosBuscaSupabase.length > 0) {
-      produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
-    }
+    // Sempre adicionar produtos da busca Supabase (sobrescrevem se já existirem com dados mais atualizados)
+    // Isso garante que produtos encontrados no Supabase sejam incluídos, mesmo que já existam localmente
+    produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
     
     return Array.from(produtosUnicos.values());
-  }, [produtos, produtosBuscaSupabase, searchProduto]);
+  }, [produtos, produtosBuscaSupabase]);
   
   const filteredProdutos = useMemo(() => {
     if (todosProdutos.length === 0) return [];
@@ -1208,6 +1206,8 @@ export default function PropostaFormDialog({
       // Se há busca, verificar se o produto corresponde
       if (searchProduto && searchProduto.trim().length > 0) {
         const termoBusca = searchProduto.toLowerCase().trim();
+        
+        // Busca básica em todos os campos
         const matchesSearch = 
           p.nome?.toLowerCase().includes(termoBusca) ||
           p.codigo?.toLowerCase().includes(termoBusca) ||
@@ -1215,7 +1215,19 @@ export default function PropostaFormDialog({
           p.codigo_fabricante?.toLowerCase().includes(termoBusca) ||
           p.descricao?.toLowerCase().includes(termoBusca);
         
-        if (!matchesSearch) return false;
+        // Se não encontrou com busca básica e o termo é um número, fazer busca parcial em códigos
+        // Isso garante que "48" encontre "CT48", "RT40", etc.
+        if (!matchesSearch && /^\d+$/.test(termoBusca)) {
+          const numberPattern = termoBusca;
+          const matchesNumber = 
+            p.codigo?.toLowerCase().includes(numberPattern) ||
+            p.codigo_fabricante?.toLowerCase().includes(numberPattern) ||
+            p.sku_interno?.toLowerCase().includes(numberPattern);
+          
+          if (!matchesNumber) return false;
+        } else if (!matchesSearch) {
+          return false;
+        }
       }
       
       // Filtrar por tipo de disponibilidade apenas se tipo_operacao estiver definido
@@ -1616,7 +1628,7 @@ export default function PropostaFormDialog({
                         {filteredProdutos.map((produto) => (
                           <div
                             key={produto.id}
-                            className="flex items-center gap-2 p-1.5 border rounded cursor-pointer hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 p-1.5 border rounded cursor-pointer hover:bg-accent transition-colors max-w-full overflow-hidden"
                             onClick={() => handleProdutoClick(produto)}
                           >
                             {produto.imagem_principal && (
@@ -1629,50 +1641,48 @@ export default function PropostaFormDialog({
                                 }}
                               />
                             )}
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0 overflow-hidden">
                               <p className="font-medium text-sm truncate leading-tight">{produto.nome}</p>
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
                                 {produto.sku_interno && (
-                                  <span className="font-mono">{produto.sku_interno}</span>
+                                  <span className="font-mono truncate">{produto.sku_interno}</span>
                                 )}
                                 {produto.codigo && produto.codigo !== produto.sku_interno && (
                                   <>
-                                    {produto.sku_interno && <span>•</span>}
+                                    {produto.sku_interno && <span className="flex-shrink-0">•</span>}
                                     <span className="truncate">{produto.codigo}</span>
                                   </>
                                 )}
                                 {produto.brand && (
                                   <>
-                                    {(produto.sku_interno || produto.codigo) && <span>•</span>}
+                                    {(produto.sku_interno || produto.codigo) && <span className="flex-shrink-0">•</span>}
                                     <span className="font-medium truncate">{produto.brand.nome}</span>
                                   </>
                                 )}
-                                <span className="ml-auto flex items-center gap-1.5">
-                                  {produto.estoque_atual !== undefined && (
-                                    <>
-                                      <span className="hidden sm:inline">Est:</span>
-                                      <span className={produto.estoque_atual > 0 ? "text-green-600" : "text-muted-foreground"}>
-                                        {produto.estoque_atual || 0}
-                                      </span>
-                                    </>
-                                  )}
-                                </span>
+                                {produto.estoque_atual !== undefined && (
+                                  <>
+                                    <span className="hidden sm:inline flex-shrink-0">Est:</span>
+                                    <span className={`flex-shrink-0 ${produto.estoque_atual > 0 ? "text-green-600" : "text-muted-foreground"}`}>
+                                      {produto.estoque_atual || 0}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </div>
-                            <div className="text-right flex-shrink-0 ml-2">
+                            <div className="text-right flex-shrink-0 ml-2 max-w-[120px]">
                               {produto.valor_venda ? (
-                                <p className="font-semibold text-sm text-success leading-tight">
+                                <p className="font-semibold text-sm text-success leading-tight truncate">
                                   R$ {produto.valor_venda.toFixed(2)}
                                 </p>
                               ) : produto.valor_locacao ? (
-                                <p className="font-semibold text-xs text-success leading-tight">
+                                <p className="font-semibold text-xs text-success leading-tight truncate">
                                   R$ {produto.valor_locacao.toFixed(2)}/mês
                                 </p>
                               ) : (
                                 <span className="text-muted-foreground text-xs">Sem preço</span>
                               )}
                               {produto.custo_medio && (
-                                <p className="text-xs text-muted-foreground leading-tight">
+                                <p className="text-xs text-muted-foreground leading-tight truncate">
                                   Custo: R$ {produto.custo_medio.toFixed(2)}
                                 </p>
                               )}
