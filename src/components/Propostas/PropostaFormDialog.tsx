@@ -27,6 +27,15 @@ import { CotacaoCompleta } from "@/lib/cotacoesService";
 import { searchProductsInSupabase } from "@/lib/supabaseProductSearch";
 import { TabelaItensProposta } from "./TabelaItensProposta";
 import { DialogAdicionarProduto } from "./DialogAdicionarProduto";
+import {
+  devLog,
+  devLogInicio,
+  devLogSucesso,
+  devLogAviso,
+  devLogErro,
+  devLogProdutoFiltrado,
+  devLogFiltroProdutos,
+} from "@/lib/devLogger";
 
 interface PropostaFormDialogProps {
   open: boolean;
@@ -238,7 +247,9 @@ export default function PropostaFormDialog({
 
   const loadProdutos = async () => {
     try {
+      devLogInicio('carregamento de produtos ativos do banco de dados');
       logger.db("Carregando produtos ativos do banco de dados");
+      
       const { data, error } = await supabase
         .from("products")
         .select(`
@@ -253,14 +264,21 @@ export default function PropostaFormDialog({
         .order("nome");
       
       if (error) {
+        devLogErro('Erro ao carregar produtos do banco de dados', error);
         logger.error("DB", "Erro ao carregar produtos", error);
         toast.error("Erro ao carregar produtos: " + error.message);
         return;
       }
       
-      logger.db(`✅ ${data?.length || 0} produtos ativos carregados`);
+      const quantidade = data?.length || 0;
+      devLogSucesso(`${quantidade} produtos ativos carregados`, {
+        produtosComCodigo: data?.filter(p => p.codigo).length || 0,
+        produtosSemCodigo: data?.filter(p => !p.codigo).length || 0,
+      });
+      logger.db(`✅ ${quantidade} produtos ativos carregados`);
       setProdutos(data || []);
     } catch (error: any) {
+      devLogErro('Erro ao carregar produtos', error);
       logger.error("DB", "Erro ao carregar produtos", error);
       toast.error("Erro ao carregar produtos");
     }
@@ -511,57 +529,91 @@ export default function PropostaFormDialog({
   };
 
   const handleConfirmarAdicionarProduto = (quantidade: number, precoUnitario: number, desconto: number) => {
-    if (!produtoSelecionado) return;
-
-    logger.ui(`Adicionando produto à proposta: ${produtoSelecionado.nome} (${produtoSelecionado.codigo})`);
-    
-    const custoMedio = produtoSelecionado.custo_medio || 0;
-    const isLocacao = formData.tipo_operacao.includes('locacao');
-    
-    let custoUnitario = custoMedio;
-    
-    if (isLocacao && formData.tipo_operacao === 'locacao_direta') {
-      custoUnitario = calcularCustoLocacaoDireta(custoMedio, produtoSelecionado.vida_util_meses || 36);
+    if (!produtoSelecionado) {
+      devLogAviso('Tentativa de adicionar produto sem produto selecionado');
+      return;
     }
 
-    // Calcular subtotal com desconto
-    const periodo = isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : 1;
-    const subtotal = quantidade * precoUnitario * periodo;
-    const descontoValor = (subtotal * desconto) / 100;
-    const total = subtotal - descontoValor;
-
-    // Calcular margem (limitada a DECIMAL(5,2) = máximo 999.99)
-    let margem = 0;
-    if (custoUnitario > 0) {
-      margem = ((precoUnitario - custoUnitario) / custoUnitario) * 100;
-      // Limitar a 999.99% (limite do DECIMAL(5,2))
-      margem = Math.min(Math.max(margem, -999.99), 999.99);
-      margem = parseFloat(margem.toFixed(2));
+    // Validar dados obrigatórios
+    if (!produtoSelecionado.codigo && !produtoSelecionado.nome) {
+      devLogErro('Erro ao adicionar produto: produto sem código e sem nome', {
+        produto: produtoSelecionado,
+      });
+      toast.error("Produto sem dados obrigatórios (código ou nome)");
+      return;
     }
 
-    const newItem: ProposalItem = {
-      product_id: produtoSelecionado.id,
-      descricao: produtoSelecionado.nome || produtoSelecionado.descricao || "",
-      codigo: produtoSelecionado.codigo || "",
-      unidade: produtoSelecionado.unidade || "un",
-      quantidade: quantidade,
-      custo_unitario: custoUnitario,
-      valor_unitario: precoUnitario,
-      preco_unitario: precoUnitario, // compatibilidade
-      comissao_percentual: produtoSelecionado.comissao_agenciamento_padrao || 0,
-      periodo_locacao_meses: isLocacao ? periodo : undefined,
-      desconto: desconto,
-      total: total,
-      margem: margem,
-      estoque: produtoSelecionado.estoque_atual,
-      imagem_url: produtoSelecionado.imagem_principal,
-      vida_util_meses: produtoSelecionado.vida_util_meses || 36,
-    };
+    try {
+      devLogInicio('adição de produto à proposta', {
+        produto: produtoSelecionado.nome,
+        codigo: produtoSelecionado.codigo,
+        quantidade,
+        precoUnitario,
+        desconto,
+      });
+      logger.ui(`Adicionando produto à proposta: ${produtoSelecionado.nome} (${produtoSelecionado.codigo})`);
+      
+      const custoMedio = produtoSelecionado.custo_medio || 0;
+      const isLocacao = formData.tipo_operacao.includes('locacao');
+      
+      let custoUnitario = custoMedio;
+      
+      if (isLocacao && formData.tipo_operacao === 'locacao_direta') {
+        custoUnitario = calcularCustoLocacaoDireta(custoMedio, produtoSelecionado.vida_util_meses || 36);
+      }
 
-    logger.ui(`✅ Item adicionado: ${newItem.descricao}, Total: R$ ${newItem.total.toFixed(2)}`);
-    setItems([...items, newItem]);
-    setSearchProduto("");
-    setProdutoSelecionado(null);
+      // Calcular subtotal com desconto
+      const periodo = isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : 1;
+      const subtotal = quantidade * precoUnitario * periodo;
+      const descontoValor = (subtotal * desconto) / 100;
+      const total = subtotal - descontoValor;
+
+      // Calcular margem (limitada a DECIMAL(5,2) = máximo 999.99)
+      let margem = 0;
+      if (custoUnitario > 0) {
+        margem = ((precoUnitario - custoUnitario) / custoUnitario) * 100;
+        // Limitar a 999.99% (limite do DECIMAL(5,2))
+        margem = Math.min(Math.max(margem, -999.99), 999.99);
+        margem = parseFloat(margem.toFixed(2));
+      }
+
+      const newItem: ProposalItem = {
+        product_id: produtoSelecionado.id,
+        descricao: produtoSelecionado.nome || produtoSelecionado.descricao || "",
+        codigo: produtoSelecionado.codigo || "",
+        unidade: produtoSelecionado.unidade || "un",
+        quantidade: quantidade,
+        custo_unitario: custoUnitario,
+        valor_unitario: precoUnitario,
+        preco_unitario: precoUnitario, // compatibilidade
+        comissao_percentual: produtoSelecionado.comissao_agenciamento_padrao || 0,
+        periodo_locacao_meses: isLocacao ? periodo : undefined,
+        desconto: desconto,
+        total: total,
+        margem: margem,
+        estoque: produtoSelecionado.estoque_atual,
+        imagem_url: produtoSelecionado.imagem_principal,
+        vida_util_meses: produtoSelecionado.vida_util_meses || 36,
+      };
+
+      devLogSucesso('Produto adicionado à proposta', {
+        item: {
+          descricao: newItem.descricao,
+          codigo: newItem.codigo,
+          quantidade: newItem.quantidade,
+          valor_unitario: newItem.valor_unitario,
+          total: newItem.total,
+          margem: newItem.margem,
+        },
+      });
+      logger.ui(`✅ Item adicionado: ${newItem.descricao}, Total: R$ ${newItem.total.toFixed(2)}`);
+      setItems([...items, newItem]);
+      setSearchProduto("");
+      setProdutoSelecionado(null);
+    } catch (error) {
+      devLogErro('Erro ao adicionar produto na proposta', error);
+      toast.error("Erro ao adicionar produto à proposta");
+    }
   };
 
   const updateItem = (index: number, field: keyof ProposalItem, value: any) => {
@@ -841,15 +893,6 @@ export default function PropostaFormDialog({
 
       const codigo = proposta?.codigo || await gerarCodigo();
 
-      // Coletar IDs únicos das cotações usadas nos itens
-      const cotacoesIds = Array.from(
-        new Set(
-          items
-            .filter((item) => item.cotacao_id)
-            .map((item) => item.cotacao_id!)
-        )
-      );
-
       // Arredondar todos os valores monetários para 2 casas decimais
       const proposalData = {
         codigo,
@@ -872,7 +915,8 @@ export default function PropostaFormDialog({
         despesas_adicionais: Math.round(formData.despesas_adicionais * 100) / 100,
         total_geral: Math.round(totalGeral * 100) / 100,
         status: formData.status,
-        cotacoes_ids: cotacoesIds.length > 0 ? cotacoesIds : null,
+        // Nota: A relação com cotações é mantida através dos campos nos proposal_items
+        // (cotacao_id, cotacao_item_id, etc.) - não há coluna cotacoes_ids na tabela proposals
       };
 
       let proposalId = proposta?.id;
@@ -933,43 +977,75 @@ export default function PropostaFormDialog({
           }
         }
         
-        return {
+        // Garantir que campos obrigatórios tenham valores válidos
+        const descricao = item.descricao || item.codigo || "Item sem descrição";
+        const quantidade = item.quantidade || 1;
+        const valorUnitario = item.valor_unitario || 0;
+        const precoUnitario = valorUnitario;
+        const total = item.total || 0;
+        
+        // Construir objeto removendo campos undefined
+        const itemData: any = {
           proposal_id: proposalId,
-          product_id: item.product_id ? cleanUUID(item.product_id) : null,
-          fornecedor_id: item.fornecedor_id ? cleanUUID(item.fornecedor_id) : null,
-          descricao: item.descricao,
-          // Sempre salvar código interno do produto (não código do fornecedor)
-          codigo: codigoInterno || "",
-          unidade: item.unidade,
-          quantidade: item.quantidade,
-          custo_unitario: Math.round(item.custo_unitario * 100) / 100,
-          valor_unitario: Math.round(item.valor_unitario * 100) / 100,
-          preco_unitario: Math.round(item.valor_unitario * 100) / 100, // compatibilidade
-          comissao_percentual: limitDecimal52(item.comissao_percentual),
-          periodo_locacao_meses: item.periodo_locacao_meses,
-          desconto: limitDecimal52(item.desconto) || 0,
-          total: Math.round(item.total * 100) / 100,
-          margem: limitDecimal52(item.margem),
-          estoque: item.estoque,
-          imagem_url: item.imagem_url,
-          lucro_subtotal: Math.round(lucroSubtotal * 100) / 100,
-          // Campos de origem da cotação (auditoria completa)
-          cotacao_id: item.cotacao_id ? cleanUUID(item.cotacao_id) : null,
-          cotacao_item_id: item.cotacao_item_id ? cleanUUID(item.cotacao_item_id) : null,
-          cotacao_numero: item.cotacao_numero || null,
-          fornecedor_origem_id: item.fornecedor_origem_id ? cleanUUID(item.fornecedor_origem_id) : null,
-          // Valores originais da cotação
-          custo_origem: item.custo_origem ? Math.round(item.custo_origem * 100) / 100 : null, // Mantido para compatibilidade
-          valor_original_unitario: item.valor_original_unitario ? Math.round(item.valor_original_unitario * 100) / 100 : null,
-          moeda_origem: item.moeda_origem || null,
-          taxa_cambio_origem: item.taxa_cambio_origem ? Math.round(item.taxa_cambio_origem * 10000) / 10000 : null,
-          // Valores convertidos
-          valor_convertido_brl: item.valor_convertido_brl ? Math.round(item.valor_convertido_brl * 100) / 100 : null,
-          valor_convertido_usd: item.valor_convertido_usd ? Math.round(item.valor_convertido_usd * 100) / 100 : null,
-          // Valor escolhido e modo
-          valor_escolhido_para_proposta: item.valor_escolhido_para_proposta ? Math.round(item.valor_escolhido_para_proposta * 100) / 100 : null,
-          moeda_escolhida: item.moeda_escolhida || null,
+          descricao: descricao, // NOT NULL
+          quantidade: quantidade, // NOT NULL
+          preco_unitario: precoUnitario, // NOT NULL
+          total: total, // NOT NULL
         };
+        
+        // Adicionar campos opcionais apenas se tiverem valores
+        if (item.product_id) {
+          itemData.product_id = cleanUUID(item.product_id);
+        }
+        if (item.fornecedor_id) {
+          itemData.fornecedor_id = cleanUUID(item.fornecedor_id);
+        }
+        if (codigoInterno) {
+          itemData.codigo = codigoInterno;
+        }
+        if (item.unidade) {
+          itemData.unidade = item.unidade;
+        }
+        if (item.custo_unitario != null) {
+          itemData.custo_unitario = Math.round(item.custo_unitario * 100) / 100;
+        }
+        if (valorUnitario != null) {
+          itemData.valor_unitario = Math.round(valorUnitario * 100) / 100;
+        }
+        if (item.comissao_percentual != null) {
+          const comissao = limitDecimal52(item.comissao_percentual);
+          if (comissao != null) {
+            itemData.comissao_percentual = comissao;
+          }
+        }
+        if (item.periodo_locacao_meses) {
+          itemData.periodo_locacao_meses = item.periodo_locacao_meses;
+        }
+        if (item.desconto != null) {
+          const desconto = limitDecimal52(item.desconto);
+          if (desconto != null) {
+            itemData.desconto = desconto;
+          } else {
+            itemData.desconto = 0;
+          }
+        }
+        if (item.margem != null) {
+          const margem = limitDecimal52(item.margem);
+          if (margem != null) {
+            itemData.margem = margem;
+          }
+        }
+        if (item.estoque != null) {
+          itemData.estoque = item.estoque;
+        }
+        if (item.imagem_url) {
+          itemData.imagem_url = item.imagem_url;
+        }
+        if (lucroSubtotal != null && !isNaN(lucroSubtotal)) {
+          itemData.lucro_subtotal = Math.round(lucroSubtotal * 100) / 100;
+        }
+        
+        return itemData;
       });
 
       const { error: itemsError } = await supabase
@@ -1147,16 +1223,12 @@ export default function PropostaFormDialog({
     const timeoutId = setTimeout(async () => {
       setBuscandoProdutos(true);
       try {
-        if (import.meta.env.DEV) {
-          console.log("🔍 Iniciando busca no Supabase para:", searchProduto);
-        }
+        devLogInicio('busca de produtos no Supabase', { termo: searchProduto });
         
         // Buscar produtos no Supabase
         const resultados = await searchProductsInSupabase(searchProduto);
         
-        if (import.meta.env.DEV) {
-          console.log("📦 Resultados da busca Supabase:", resultados.length);
-        }
+        devLog(`Resultados da busca Supabase: ${resultados.length}`, { termo: searchProduto });
         
         if (resultados.length > 0) {
           // Buscar dados completos dos produtos encontrados
@@ -1175,25 +1247,21 @@ export default function PropostaFormDialog({
             .eq("status", "ativo");
           
           if (error) {
-            console.error("Erro ao buscar produtos completos:", error);
+            devLogErro('Erro ao buscar produtos completos no Supabase', error);
             logger.error("DB", "Erro ao buscar produtos completos no Supabase", error);
             setProdutosBuscaSupabase([]);
           } else if (produtosCompletos) {
-            if (import.meta.env.DEV) {
-              console.log("✅ Produtos completos carregados:", produtosCompletos.length);
-            }
+            devLogSucesso(`Produtos completos carregados: ${produtosCompletos.length}`);
             setProdutosBuscaSupabase(produtosCompletos);
           } else {
             setProdutosBuscaSupabase([]);
           }
         } else {
-          if (import.meta.env.DEV) {
-            console.log("⚠️ Nenhum resultado encontrado no Supabase para:", searchProduto);
-          }
+          devLogAviso(`Nenhum resultado encontrado no Supabase para: "${searchProduto}"`);
           setProdutosBuscaSupabase([]);
         }
       } catch (error) {
-        console.error("Erro ao buscar produtos no Supabase:", error);
+        devLogErro('Erro ao buscar produtos no Supabase', error);
         logger.error("DB", "Erro ao buscar produtos no Supabase", error);
         setProdutosBuscaSupabase([]);
       } finally {
@@ -1208,73 +1276,104 @@ export default function PropostaFormDialog({
   const todosProdutos = useMemo(() => {
     const produtosUnicos = new Map<string, any>();
     
-    // Se não há busca ou busca muito curta, usar apenas produtos locais
-    if (!searchProduto || searchProduto.trim().length < 2) {
-      produtos.forEach(p => produtosUnicos.set(p.id, p));
-      if (import.meta.env.DEV) {
-        console.log(`📦 Sem busca: usando ${produtos.length} produtos locais`);
-      }
-      return Array.from(produtosUnicos.values());
-    }
-    
-    // Quando há busca, combinar produtos locais com resultados da busca Supabase
-    // Primeiro adicionar produtos locais (base completa)
+    // SEMPRE adicionar produtos locais primeiro (base completa)
     produtos.forEach(p => produtosUnicos.set(p.id, p));
     
-    // Depois adicionar produtos da busca Supabase (sobrescrevem se já existirem com dados mais atualizados)
-    // Isso garante que produtos encontrados no Supabase sejam incluídos, mesmo que já existam localmente
-    produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
-    
-    if (import.meta.env.DEV) {
-      console.log(`📦 Com busca: ${produtos.length} locais + ${produtosBuscaSupabase.length} Supabase = ${produtosUnicos.size} únicos`);
+    // Se há busca com 2+ caracteres, adicionar produtos da busca Supabase
+    if (searchProduto && searchProduto.trim().length >= 2) {
+      produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
     }
+    
+    devLog(
+      `Produtos combinados: ${produtos.length} locais + ${produtosBuscaSupabase.length} Supabase = ${produtosUnicos.size} únicos`
+    );
     
     return Array.from(produtosUnicos.values());
   }, [produtos, produtosBuscaSupabase, searchProduto]);
   
   const filteredProdutos = useMemo(() => {
     if (todosProdutos.length === 0) {
-      if (import.meta.env.DEV) {
-        console.log("⚠️ Nenhum produto em todosProdutos");
-      }
+      devLogAviso('Nenhum produto em todosProdutos');
       return [];
     }
     
     const termoBusca = searchProduto?.trim() || "";
     const termoBuscaLower = termoBusca.toLowerCase();
-    const temBusca = termoBusca.length > 0;
+    const temBusca = termoBusca.length >= 2; // Mudança: mínimo 2 caracteres para filtrar
+    
+    const produtosIgnorados: Array<{
+      nome?: string;
+      codigo?: string;
+      motivo: string;
+    }> = [];
     
     const filtrados = todosProdutos.filter(p => {
+      // Verificar se produto tem dados obrigatórios
+      if (!p.codigo && !p.nome) {
+        produtosIgnorados.push({
+          nome: p.nome,
+          codigo: p.codigo,
+          motivo: 'Produto sem código e sem nome',
+        });
+        return false;
+      }
+      
       // Se há busca, verificar se o produto corresponde
       if (temBusca) {
-        // Busca básica em todos os campos (case-insensitive)
-        const matchesSearch = 
-          (p.nome && p.nome.toLowerCase().includes(termoBuscaLower)) ||
-          (p.codigo && p.codigo.toLowerCase().includes(termoBuscaLower)) ||
-          (p.sku_interno && p.sku_interno.toLowerCase().includes(termoBuscaLower)) ||
-          (p.codigo_fabricante && p.codigo_fabricante.toLowerCase().includes(termoBuscaLower)) ||
-          (p.descricao && p.descricao.toLowerCase().includes(termoBuscaLower));
+        // Busca em todos os campos (case-insensitive)
+        // Verificar cada campo individualmente para garantir que funciona
+        const nomeMatch = p.nome ? p.nome.toLowerCase().includes(termoBuscaLower) : false;
+        const codigoMatch = p.codigo ? p.codigo.toLowerCase().includes(termoBuscaLower) : false;
+        const skuMatch = p.sku_interno ? p.sku_interno.toLowerCase().includes(termoBuscaLower) : false;
+        const codigoFabricanteMatch = p.codigo_fabricante ? p.codigo_fabricante.toLowerCase().includes(termoBuscaLower) : false;
+        const descricaoMatch = p.descricao ? p.descricao.toLowerCase().includes(termoBuscaLower) : false;
         
-        // Se não encontrou com busca básica e o termo é um número, fazer busca parcial em códigos
-        // Isso garante que "48" encontre "CT48", "RT40", etc.
-        if (!matchesSearch && /^\d+$/.test(termoBuscaLower)) {
-          const matchesNumber = 
-            (p.codigo && p.codigo.toLowerCase().includes(termoBuscaLower)) ||
-            (p.codigo_fabricante && p.codigo_fabricante.toLowerCase().includes(termoBuscaLower)) ||
-            (p.sku_interno && p.sku_interno.toLowerCase().includes(termoBuscaLower));
-          
-          if (!matchesNumber) return false;
-        } else if (!matchesSearch) {
+        const matchesSearch = nomeMatch || codigoMatch || skuMatch || codigoFabricanteMatch || descricaoMatch;
+        
+        if (!matchesSearch) {
           return false;
         }
       }
       
       // Filtrar por tipo de disponibilidade apenas se tipo_operacao estiver definido
+      // IMPORTANTE: Quando há busca ativa, ser mais permissivo para não ocultar produtos relevantes
       if (formData.tipo_operacao) {
-        if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
-          return p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos';
-        } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
-          return p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos';
+        const tipoDisponibilidade = p.tipo_disponibilidade;
+        
+        // Se há busca ativa (2+ caracteres), mostrar TODOS os produtos que correspondem à busca
+        // independente do tipo_disponibilidade, para que o usuário possa ver e escolher
+        // Isso é importante porque produtos podem ser usados em diferentes contextos
+        if (temBusca) {
+          // Com busca ativa, mostrar todos os produtos que correspondem à busca
+          // O filtro de tipo_disponibilidade será aplicado apenas quando não há busca
+          return true;
+        } else {
+          // Sem busca ativa, aplicar filtro estrito por tipo_disponibilidade
+          let passaFiltroTipo = false;
+          
+          if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
+            passaFiltroTipo = tipoDisponibilidade === 'venda' || tipoDisponibilidade === 'ambos';
+          } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
+            passaFiltroTipo = tipoDisponibilidade === 'locacao' || tipoDisponibilidade === 'ambos';
+          } else {
+            // Tipo de operação desconhecido, permitir todos
+            passaFiltroTipo = true;
+          }
+          
+          if (!passaFiltroTipo) {
+            devLogProdutoFiltrado(
+              'tipo_disponibilidade incompatível',
+              {
+                nome: p.nome,
+                codigo: p.codigo,
+                tipo_disponibilidade: tipoDisponibilidade,
+                tipo_operacao_ativa: formData.tipo_operacao,
+              },
+              'PropostaFormDialog.tsx:filteredProdutos'
+            );
+          }
+          
+          return passaFiltroTipo;
         }
       }
       
@@ -1282,8 +1381,41 @@ export default function PropostaFormDialog({
       return true;
     });
     
-    if (import.meta.env.DEV && temBusca) {
-      console.log(`🔍 Filtro aplicado: ${todosProdutos.length} produtos -> ${filtrados.length} filtrados para "${termoBusca}"`);
+    // Log estruturado do filtro
+    if (temBusca) {
+      // Verificar quantos produtos passam apenas o filtro de busca (sem tipo_disponibilidade)
+      const produtosQuePassamBusca = todosProdutos.filter(p => {
+        const nomeMatch = p.nome ? p.nome.toLowerCase().includes(termoBuscaLower) : false;
+        const codigoMatch = p.codigo ? p.codigo.toLowerCase().includes(termoBuscaLower) : false;
+        const skuMatch = p.sku_interno ? p.sku_interno.toLowerCase().includes(termoBuscaLower) : false;
+        const codigoFabricanteMatch = p.codigo_fabricante ? p.codigo_fabricante.toLowerCase().includes(termoBuscaLower) : false;
+        const descricaoMatch = p.descricao ? p.descricao.toLowerCase().includes(termoBuscaLower) : false;
+        return nomeMatch || codigoMatch || skuMatch || codigoFabricanteMatch || descricaoMatch;
+      });
+      
+      let produtosQuePassamTipo: number | undefined;
+      if (formData.tipo_operacao) {
+        produtosQuePassamTipo = produtosQuePassamBusca.filter(p => {
+          const tipoDisponibilidade = p.tipo_disponibilidade;
+          if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
+            return tipoDisponibilidade === 'venda' || tipoDisponibilidade === 'ambos';
+          } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
+            return tipoDisponibilidade === 'locacao' || tipoDisponibilidade === 'ambos';
+          }
+          return true;
+        }).length;
+      }
+      
+      devLogFiltroProdutos(
+        todosProdutos.length,
+        filtrados.length,
+        termoBusca,
+        {
+          produtosQuePassamBusca: produtosQuePassamBusca.length,
+          produtosQuePassamTipo,
+          produtosIgnorados: produtosIgnorados.length > 0 ? produtosIgnorados : undefined,
+        }
+      );
     }
     
     return filtrados;
@@ -1315,7 +1447,7 @@ export default function PropostaFormDialog({
             </TabsList>
 
             <ScrollArea className="h-[60vh] pr-4">
-              <TabsContent value="cabecalho" className="space-y-4">
+              <TabsContent value="cabecalho" className="space-y-6">
                 <TipoOperacaoSelector
                   value={formData.tipo_operacao}
                   onChange={(tipo) => {
@@ -1378,8 +1510,8 @@ export default function PropostaFormDialog({
                   </Card>
                 )}
 
-                <div>
-                  <Label>Selecionar Modelo (Opcional)</Label>
+                <div className="space-y-2">
+                  <Label className="text-slate-700 dark:text-slate-300 font-medium">Selecionar Modelo (Opcional)</Label>
                   <Select
                     value={formData.modelo_id || undefined}
                     onValueChange={(value) => {
@@ -1387,7 +1519,7 @@ export default function PropostaFormDialog({
                       aplicarModelo(value);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="placeholder:text-slate-400">
                       <SelectValue placeholder="Escolha um modelo pronto ou crie do zero" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1398,58 +1530,58 @@ export default function PropostaFormDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Aplicar modelo preenche automaticamente introdução e condições
                   </p>
                 </div>
 
                 {/* Card com informações do cliente selecionado */}
                 {selectedCliente && (
-                  <Card className="p-4 bg-muted/50 border-2">
-                    <div className="space-y-2">
+                  <Card className="p-5 bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 shadow-sm rounded-lg">
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-lg">{selectedCliente.nome}</h3>
-                        <Badge variant="outline">{selectedCliente.tipo || "Cliente"}</Badge>
+                        <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100">{selectedCliente.nome}</h3>
+                        <Badge variant="outline" className="bg-white dark:bg-slate-800">{selectedCliente.tipo || "Cliente"}</Badge>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
                         {selectedCliente.cnpj && (
                           <div>
-                            <span className="text-muted-foreground">CNPJ: </span>
-                            <span className="font-mono">{selectedCliente.cnpj}</span>
+                            <span className="text-slate-600 dark:text-slate-400 font-medium">CNPJ: </span>
+                            <span className="font-mono text-slate-800 dark:text-slate-200">{selectedCliente.cnpj}</span>
                           </div>
                         )}
                         {selectedCliente.email && (
                           <div>
-                            <span className="text-muted-foreground">Email: </span>
-                            <span>{selectedCliente.email}</span>
+                            <span className="text-slate-600 dark:text-slate-400 font-medium">Email: </span>
+                            <span className="text-slate-800 dark:text-slate-200">{selectedCliente.email}</span>
                           </div>
                         )}
                         {selectedCliente.telefone && (
                           <div>
-                            <span className="text-muted-foreground">Telefone: </span>
-                            <span>{selectedCliente.telefone}</span>
+                            <span className="text-slate-600 dark:text-slate-400 font-medium">Telefone: </span>
+                            <span className="text-slate-800 dark:text-slate-200">{selectedCliente.telefone}</span>
                           </div>
                         )}
                         {(selectedCliente.cidade || selectedCliente.estado) && (
                           <div>
-                            <span className="text-muted-foreground">Localização: </span>
-                            <span>{[selectedCliente.cidade, selectedCliente.estado].filter(Boolean).join(" - ")}</span>
+                            <span className="text-slate-600 dark:text-slate-400 font-medium">Localização: </span>
+                            <span className="text-slate-800 dark:text-slate-200">{[selectedCliente.cidade, selectedCliente.estado].filter(Boolean).join(" - ")}</span>
                           </div>
                         )}
                       </div>
                       {selectedCliente.origin_partner && (
-                        <div className="pt-2 border-t text-xs text-muted-foreground">
-                          <span>Parceiro de origem: </span>
-                          <span className="font-medium">{selectedCliente.origin_partner.nome_fantasia}</span>
+                        <div className="pt-3 border-t border-blue-200 dark:border-blue-800 text-xs">
+                          <span className="text-slate-600 dark:text-slate-400">Parceiro de origem: </span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">{selectedCliente.origin_partner.nome_fantasia}</span>
                         </div>
                       )}
                     </div>
                   </Card>
                 )}
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>Cliente *</Label>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-slate-700 dark:text-slate-300 font-medium">Cliente *</Label>
                     <Select
                       value={formData.cliente_id}
                       onValueChange={(value) =>
@@ -1457,7 +1589,7 @@ export default function PropostaFormDialog({
                       }
                       disabled={loading}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="placeholder:text-slate-400">
                         <SelectValue placeholder={
                           loading 
                             ? "Carregando clientes..." 
@@ -1468,7 +1600,7 @@ export default function PropostaFormDialog({
                       </SelectTrigger>
                       <SelectContent>
                         {clientes.length === 0 ? (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          <div className="px-2 py-1.5 text-sm text-slate-500">
                             Nenhum cliente encontrado. Cadastre clientes primeiro.
                           </div>
                         ) : (
@@ -1477,12 +1609,12 @@ export default function PropostaFormDialog({
                               <div className="flex flex-col">
                                 <span className="font-medium">{cliente.nome}</span>
                                 {cliente.cnpj && (
-                                  <span className="text-xs text-muted-foreground">
+                                  <span className="text-xs text-slate-500">
                                     CNPJ: {cliente.cnpj}
                                   </span>
                                 )}
                                 {(cliente.cidade || cliente.estado) && (
-                                  <span className="text-xs text-muted-foreground">
+                                  <span className="text-xs text-slate-500">
                                     {[cliente.cidade, cliente.estado].filter(Boolean).join(" - ")}
                                   </span>
                                 )}
@@ -1493,14 +1625,14 @@ export default function PropostaFormDialog({
                       </SelectContent>
                     </Select>
                     {clientes.length === 0 && !loading && (
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                         💡 Vá para a página de Clientes para cadastrar novos clientes.
                       </p>
                     )}
                   </div>
 
-                  <div>
-                    <Label>Oportunidade (Opcional)</Label>
+                  <div className="space-y-2">
+                    <Label className="text-slate-700 dark:text-slate-300 font-medium">Oportunidade (Opcional)</Label>
                     <Select
                       value={formData.oportunidade_id || undefined}
                       onValueChange={(value) =>
@@ -1508,7 +1640,7 @@ export default function PropostaFormDialog({
                       }
                       disabled={!formData.cliente_id || oportunidades.length === 0}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="placeholder:text-slate-400">
                         <SelectValue placeholder={
                           !formData.cliente_id 
                             ? "Selecione um cliente primeiro" 
@@ -1522,7 +1654,7 @@ export default function PropostaFormDialog({
                           <SelectItem key={oportunidade.id} value={oportunidade.id}>
                             <div className="flex flex-col">
                               <span className="font-medium">{oportunidade.product_name}</span>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <div className="flex items-center gap-2 text-xs text-slate-500">
                                 <span>{oportunidade.tipo_oportunidade}</span>
                                 {oportunidade.valor_estimado && (
                                   <>
@@ -1543,36 +1675,38 @@ export default function PropostaFormDialog({
                       </SelectContent>
                     </Select>
                     {formData.cliente_id && oportunidades.length === 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                         Nenhuma oportunidade ativa encontrada para este cliente
                       </p>
                     )}
                   </div>
 
-                  <div>
-                    <Label>Data da Proposta</Label>
+                  <div className="space-y-2">
+                    <Label className="text-slate-700 dark:text-slate-300 font-medium">Data da Proposta</Label>
                     <Input
                       type="date"
                       value={formData.data_proposta}
                       onChange={(e) =>
                         setFormData({ ...formData, data_proposta: e.target.value })
                       }
+                      className="placeholder:text-slate-400"
                     />
                   </div>
 
-                  <div>
-                    <Label>Validade</Label>
+                  <div className="space-y-2">
+                    <Label className="text-slate-700 dark:text-slate-300 font-medium">Validade</Label>
                     <Input
                       type="date"
                       value={formData.validade}
                       onChange={(e) =>
                         setFormData({ ...formData, validade: e.target.value })
                       }
+                      className="placeholder:text-slate-400"
                     />
                   </div>
 
-                  <div>
-                    <Label>Status</Label>
+                  <div className="space-y-2">
+                    <Label className="text-slate-700 dark:text-slate-300 font-medium">Status</Label>
                     <Select
                       value={formData.status}
                       onValueChange={(value) =>
@@ -1592,10 +1726,11 @@ export default function PropostaFormDialog({
                   </div>
                 </div>
 
-                <div>
-                  <Label>Introdução</Label>
+                <div className="space-y-2">
+                  <Label className="text-slate-700 dark:text-slate-300 font-medium">Introdução</Label>
                   <Textarea
                     value={formData.introducao}
+                    className="placeholder:text-slate-400"
                     onChange={(e) =>
                       setFormData({ ...formData, introducao: e.target.value })
                     }
@@ -1603,8 +1738,8 @@ export default function PropostaFormDialog({
                   />
                 </div>
 
-                <div>
-                  <Label>Observações Internas</Label>
+                <div className="space-y-2">
+                  <Label className="text-slate-700 dark:text-slate-300 font-medium">Observações Internas</Label>
                   <Textarea
                     value={formData.observacoes_internas}
                     onChange={(e) =>
@@ -1612,6 +1747,7 @@ export default function PropostaFormDialog({
                     }
                     rows={3}
                     placeholder="Notas visíveis apenas para uso interno..."
+                    className="placeholder:text-slate-400"
                   />
                 </div>
               </TabsContent>
@@ -1740,10 +1876,21 @@ export default function PropostaFormDialog({
                         {buscandoProdutos ? (
                           <p>Buscando produtos...</p>
                         ) : searchProduto && searchProduto.trim().length >= 2 ? (
-                          <p>Nenhum produto encontrado para "{searchProduto}"</p>
-                        ) : filteredProdutos.length === 0 ? (
+                          <div>
+                            <p>Nenhum produto encontrado para "{searchProduto}"</p>
+                            {import.meta.env.DEV && (
+                              <p className="text-xs mt-2">
+                                Debug: {todosProdutos.length} produtos disponíveis, {produtos.length} locais, {produtosBuscaSupabase.length} do Supabase
+                              </p>
+                            )}
+                          </div>
+                        ) : searchProduto && searchProduto.trim().length > 0 && searchProduto.trim().length < 2 ? (
+                          <p>Digite pelo menos 2 caracteres para buscar produtos</p>
+                        ) : filteredProdutos.length === 0 && todosProdutos.length > 0 ? (
                           <p>Nenhum produto disponível para este tipo de operação</p>
-                        ) : null}
+                        ) : (
+                          <p>Digite no campo acima para buscar produtos</p>
+                        )}
                       </div>
                     )}
                   </Card>
@@ -2138,10 +2285,15 @@ export default function PropostaFormDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
+              className="border-blue-600 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button 
+              type="submit" 
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
               {loading ? "Salvando..." : proposta ? "Atualizar" : "Criar Proposta"}
             </Button>
           </div>

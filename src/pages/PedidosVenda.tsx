@@ -28,6 +28,7 @@ import {
   Edit,
   FileText,
   DollarSign,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -35,6 +36,17 @@ import { SalesOrderFormDialog } from "@/components/Vendas/SalesOrderFormDialog";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
 import { ExportButton } from "@/components/ExportButton";
 import { useNavigate } from "react-router-dom";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function PedidosVenda() {
   const navigate = useNavigate();
@@ -45,6 +57,8 @@ export default function PedidosVenda() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [selectedPedidos, setSelectedPedidos] = useState<string[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     loadSalesOrders();
@@ -94,6 +108,134 @@ export default function PedidosVenda() {
   const handleView = (order: any) => {
     setSelectedOrder(order);
     setDetailDialogOpen(true);
+  };
+
+  const handleToggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedPedidos(filteredOrders.map(order => order.id));
+    } else {
+      setSelectedPedidos([]);
+    }
+  };
+
+  const handleToggleSelect = (orderId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedPedidos([...selectedPedidos, orderId]);
+    } else {
+      setSelectedPedidos(selectedPedidos.filter(id => id !== orderId));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedPedidos.length === 0) {
+      toast.error("Nenhum pedido selecionado");
+      return;
+    }
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedPedidos.length === 0) {
+      toast.error("Nenhum pedido selecionado");
+      setDeleteDialogOpen(false);
+      return;
+    }
+
+    try {
+      // Verificar se há faturas vinculadas aos pedidos
+      const { data: faturas, error: faturasError } = await supabase
+        .from("sales_invoices")
+        .select("id, sales_order_id, numero_fatura")
+        .in("sales_order_id", selectedPedidos);
+
+      if (faturasError) {
+        console.error("Erro ao verificar faturas:", faturasError);
+        // Continuar mesmo se houver erro na verificação
+      }
+
+      if (faturas && faturas.length > 0) {
+        const pedidosComFaturas = new Set(faturas.map(f => f.sales_order_id));
+        const pedidosSemFaturas = selectedPedidos.filter(id => !pedidosComFaturas.has(id));
+
+        if (pedidosSemFaturas.length === 0) {
+          toast.error(
+            "Não é possível excluir os pedidos selecionados. Todos têm faturas vinculadas."
+          );
+          setDeleteDialogOpen(false);
+          return;
+        }
+
+        // Perguntar se deseja excluir apenas os sem faturas
+        const confirmar = window.confirm(
+          `${pedidosComFaturas.size} pedido(s) têm faturas vinculadas e não podem ser excluídos.\n\n` +
+          `Deseja excluir apenas os ${pedidosSemFaturas.length} pedido(s) sem faturas?`
+        );
+
+        if (!confirmar) {
+          setDeleteDialogOpen(false);
+          return;
+        }
+
+        // Deletar apenas os sem faturas
+        // Os itens serão deletados automaticamente por CASCADE
+        const { error: deleteError } = await supabase
+          .from("sales_orders")
+          .delete()
+          .in("id", pedidosSemFaturas);
+
+        if (deleteError) {
+          throw deleteError;
+        }
+
+        // Verificar se foram deletados
+        const { data: pedidosAindaExistem } = await supabase
+          .from("sales_orders")
+          .select("id")
+          .in("id", pedidosSemFaturas);
+
+        const deletados = pedidosSemFaturas.length - (pedidosAindaExistem?.length || 0);
+
+        if (deletados > 0) {
+          toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
+          setSelectedPedidos([]);
+          await loadSalesOrders();
+        } else {
+          toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+        }
+      } else {
+        // Nenhuma fatura vinculada, pode deletar todos
+        // Os itens serão deletados automaticamente por CASCADE
+        const { error: deleteError } = await supabase
+          .from("sales_orders")
+          .delete()
+          .in("id", selectedPedidos);
+
+        if (deleteError) {
+          throw deleteError;
+        }
+
+        // Verificar se foram deletados
+        const { data: pedidosAindaExistem } = await supabase
+          .from("sales_orders")
+          .select("id")
+          .in("id", selectedPedidos);
+
+        const deletados = selectedPedidos.length - (pedidosAindaExistem?.length || 0);
+
+        if (deletados > 0) {
+          toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
+          setSelectedPedidos([]);
+          await loadSalesOrders();
+        } else {
+          toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+        }
+      }
+    } catch (error: any) {
+      console.error("Erro ao excluir pedidos:", error);
+      toast.error("Erro ao excluir pedidos: " + (error.message || "Erro desconhecido"));
+    } finally {
+      setDeleteDialogOpen(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -168,6 +310,16 @@ export default function PedidosVenda() {
               total: order.total_geral || 0,
             }))}
           />
+          {selectedPedidos.length > 0 && (
+            <Button
+              onClick={handleBulkDelete}
+              variant="destructive"
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir Selecionados ({selectedPedidos.length})
+            </Button>
+          )}
           <Button onClick={handleNew} className="gap-2">
             <Plus className="h-4 w-4" />
             Novo Pedido
@@ -222,6 +374,16 @@ export default function PedidosVenda() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      filteredOrders.length > 0 &&
+                      selectedPedidos.length === filteredOrders.length &&
+                      filteredOrders.every(order => selectedPedidos.includes(order.id))
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead>Número</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Vendedor</TableHead>
@@ -239,6 +401,14 @@ export default function PedidosVenda() {
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => handleView(order)}
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedPedidos.includes(order.id)}
+                      onCheckedChange={(checked) =>
+                        handleToggleSelect(order.id, checked as boolean)
+                      }
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -330,6 +500,28 @@ export default function PedidosVenda() {
         salesOrder={selectedOrder}
         onSuccess={loadSalesOrders}
       />
+
+      {/* Modal de confirmação de exclusão em massa */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja realmente excluir os {selectedPedidos.length} pedido(s) selecionado(s)?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Confirmar Exclusão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

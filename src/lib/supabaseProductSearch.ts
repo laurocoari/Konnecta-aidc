@@ -4,6 +4,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { devLog, devLogInicio, devLogSucesso, devLogErro } from "@/lib/devLogger";
 
 export interface ProductSearchResult {
   id: string;
@@ -29,10 +30,7 @@ export async function searchProductsInSupabase(
   const term = searchTerm.trim();
   const termLower = term.toLowerCase();
   
-  // Log para debug
-  if (import.meta.env.DEV) {
-    console.log("🔍 Buscando produtos no Supabase:", term);
-  }
+  devLogInicio('busca de produtos no Supabase', { termo: term });
   
   try {
     // Busca usando OR com múltiplas condições via RPC ou múltiplas queries
@@ -79,8 +77,19 @@ export async function searchProductsInSupabase(
         .limit(100)
     );
     
-    // Se o termo contém apenas números, também buscar em sku_interno se existir
-    // Nota: sku_interno pode não estar na query inicial, mas vamos tentar buscar por código que pode conter o número
+    // Se o termo é apenas números, fazer busca adicional em códigos
+    // Isso garante que "48" encontre "CT48", "RT40", etc.
+    if (/^\d+$/.test(termLower)) {
+      // Busca adicional por número em códigos (para encontrar "CT48" quando buscar "48")
+      queries.push(
+        supabase
+          .from("products")
+          .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
+          .ilike("codigo", `%${term}%`)
+          .eq("status", "ativo")
+          .limit(100)
+      );
+    }
     
     const results = await Promise.all(queries);
     
@@ -90,7 +99,7 @@ export async function searchProductsInSupabase(
     
     results.forEach(({ data, error }, index) => {
       if (error) {
-        console.error(`Erro na busca Supabase (query ${index}):`, error);
+        devLogErro(`Erro na busca Supabase (query ${index})`, error);
         return;
       }
       
@@ -117,14 +126,22 @@ export async function searchProductsInSupabase(
     
     const finalResults = Array.from(allProducts.values());
     
-    // Log para debug
-    if (import.meta.env.DEV) {
-      console.log(`✅ Busca concluída: ${totalFound} resultados brutos, ${finalResults.length} únicos para "${term}"`);
-    }
+    devLogSucesso(
+      `Busca concluída: ${totalFound} resultados brutos, ${finalResults.length} únicos para "${term}"`,
+      finalResults.length > 0
+        ? {
+            primeirosResultados: finalResults.slice(0, 3).map(p => ({
+              nome: p.nome,
+              codigo: p.codigo,
+              codigo_fabricante: p.codigo_fabricante,
+            })),
+          }
+        : undefined
+    );
     
     return finalResults;
   } catch (error) {
-    console.error("Erro ao buscar produtos no Supabase:", error);
+    devLogErro('Erro ao buscar produtos no Supabase', error);
     return [];
   }
 }

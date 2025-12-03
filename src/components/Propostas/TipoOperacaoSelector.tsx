@@ -68,8 +68,10 @@ export function TipoOperacaoSelector({ value, onChange, disabled }: TipoOperacao
             <Card
               key={opcao.value}
               className={cn(
-                "cursor-pointer transition-all border-2 p-4",
-                isSelected ? opcao.bgColor + " border-current" : "hover:border-border",
+                "cursor-pointer transition-all border-2 p-4 rounded-lg",
+                isSelected 
+                  ? "bg-[#D9F5E5] dark:bg-green-900/30 border-green-400 dark:border-green-600 shadow-sm" 
+                  : "hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 border-slate-200 dark:border-slate-700",
                 disabled && "opacity-50 cursor-not-allowed"
               )}
               onClick={() => !disabled && onChange(opcao.value)}
@@ -80,7 +82,7 @@ export function TipoOperacaoSelector({ value, onChange, disabled }: TipoOperacao
                   <div className="flex items-center gap-2">
                     <h4 className="font-semibold">{opcao.label}</h4>
                     {isSelected && (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="secondary" className="text-xs bg-green-600 text-white">
                         Selecionado
                       </Badge>
                     )}

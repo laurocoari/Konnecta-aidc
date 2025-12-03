@@ -39,7 +39,9 @@ export function DialogAdicionarProduto({
   }, [produto, open, tipoOperacao]);
 
   const handleConfirm = () => {
-    if (precoUnitario <= 0) {
+    // Permitir adicionar produtos mesmo com valor zerado
+    // Validar apenas quantidade mínima
+    if (quantidade <= 0) {
       return;
     }
     onConfirm(quantidade, precoUnitario, desconto);
@@ -107,18 +109,36 @@ export function DialogAdicionarProduto({
                 type="number"
                 min="1"
                 value={quantidade}
-                onChange={(e) => setQuantidade(parseInt(e.target.value) || 1)}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  setQuantidade(value < 1 ? 1 : value);
+                }}
               />
             </div>
 
             <div>
-              <Label>Preço Unitário (R$) *</Label>
+              <Label>Preço Unitário (R$)</Label>
               <Input
                 type="number"
                 step="0.01"
                 min="0"
                 value={precoUnitario}
-                onChange={(e) => setPrecoUnitario(parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Permitir valor zerado e valores negativos (para ajustes)
+                  if (value === '' || value === '-') {
+                    setPrecoUnitario(0);
+                  } else {
+                    const numValue = parseFloat(value);
+                    setPrecoUnitario(isNaN(numValue) ? 0 : numValue);
+                  }
+                }}
+                onBlur={(e) => {
+                  // Garantir que o valor não seja negativo ao sair do campo
+                  if (precoUnitario < 0) {
+                    setPrecoUnitario(0);
+                  }
+                }}
                 placeholder="0.00"
               />
               {produto.valor_venda && tipoOperacao.includes('venda') && (
@@ -131,6 +151,9 @@ export function DialogAdicionarProduto({
                   Sugerido: R$ {produto.valor_locacao.toFixed(2)}/mês
                 </p>
               )}
+              <p className="text-xs text-muted-foreground mt-1">
+                Você pode definir um valor personalizado ou deixar zerado
+              </p>
             </div>
 
             <div>
@@ -185,7 +208,10 @@ export function DialogAdicionarProduto({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleConfirm} disabled={precoUnitario <= 0}>
+          <Button 
+            onClick={handleConfirm} 
+            disabled={quantidade <= 0}
+          >
             Adicionar à Proposta
           </Button>
         </div>
