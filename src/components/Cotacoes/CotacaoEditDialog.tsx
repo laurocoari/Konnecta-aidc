@@ -66,7 +66,14 @@ export function CotacaoEditDialog({
     validade: "",
     observacoes: "",
     taxa_cambio: 5.0,
+    tipo_cotacao: "",
+    proposta_numero: "",
+    pedido_numero: "",
   });
+  
+  // Estados para cliente final
+  const [clienteFinal, setClienteFinal] = useState<any>(null);
+  const [clienteFinalDialogOpen, setClienteFinalDialogOpen] = useState(false);
   
   // Modals
   const [productLinkDialogOpen, setProductLinkDialogOpen] = useState(false);
@@ -83,14 +90,54 @@ export function CotacaoEditDialog({
 
   const loadCotacaoData = async () => {
     try {
-      // Carregar cabeçalho
+      // Carregar cabeçalho completo
+      const { data: cotacaoData, error: cotacaoError } = await supabase
+        .from("cotacoes_compras")
+        .select(`
+          *,
+          cliente_final:clients(id, nome, cnpj, cidade, estado, endereco, cep)
+        `)
+        .eq("id", cotacao.id)
+        .single();
+
+      if (cotacaoError) throw cotacaoError;
+
       setFormData({
-        condicao_pagamento: cotacao.condicao_pagamento || "",
-        prazo_entrega: cotacao.prazo_entrega || "",
-        validade: cotacao.validade || "",
-        observacoes: cotacao.observacoes || "",
-        taxa_cambio: cotacao.taxa_cambio || 5.0,
+        condicao_pagamento: cotacaoData.condicao_pagamento || "",
+        prazo_entrega: cotacaoData.prazo_entrega || "",
+        validade: cotacaoData.validade || "",
+        observacoes: cotacaoData.observacoes || "",
+        taxa_cambio: cotacaoData.taxa_cambio || 5.0,
+        tipo_cotacao: cotacaoData.tipo_cotacao || "",
+        proposta_numero: cotacaoData.proposta_numero || "",
+        pedido_numero: cotacaoData.pedido_numero || "",
       });
+
+      // Carregar dados do cliente final
+      if (cotacaoData.cliente_final) {
+        // Cliente final veio do join
+        setClienteFinal(cotacaoData.cliente_final);
+      } else if (cotacaoData.cliente_final_id) {
+        // Buscar cliente final se não veio no join
+        const { data: clienteData } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("id", cotacaoData.cliente_final_id)
+          .single();
+        if (clienteData) {
+          setClienteFinal(clienteData);
+        }
+      } else if (cotacaoData.nome_cliente_final) {
+        // Se tiver nome mas não ID, criar objeto temporário com todos os dados
+        setClienteFinal({
+          id: null, // Não está cadastrado
+          nome: cotacaoData.nome_cliente_final,
+          cnpj: cotacaoData.cliente_final_cnpj || null,
+          endereco: cotacaoData.cliente_final_endereco || null,
+          cidade: cotacaoData.cidade_cliente_final || null,
+          estado: cotacaoData.estado_cliente_final || null,
+        });
+      }
 
       // Carregar itens
       const { data: itensData, error } = await supabase
@@ -121,15 +168,32 @@ export function CotacaoEditDialog({
   const handleSaveHeader = async () => {
     setLoading(true);
     try {
+      // Preparar dados do update (incluindo todos os campos)
+      const updateData: any = {
+        condicao_pagamento: formData.condicao_pagamento,
+        prazo_entrega: formData.prazo_entrega,
+        validade: formData.validade,
+        observacoes: formData.observacoes,
+        taxa_cambio: formData.taxa_cambio,
+        // Campos de tipo de cotação
+        tipo_cotacao: formData.tipo_cotacao || null,
+        proposta_numero: formData.proposta_numero || null,
+        pedido_numero: formData.pedido_numero || null,
+      };
+
+      // Se houver cliente final, atualizar também
+      if (clienteFinal) {
+        updateData.cliente_final_id = clienteFinal.id || null;
+        updateData.nome_cliente_final = clienteFinal.nome || null;
+        updateData.cliente_final_cnpj = clienteFinal.cnpj || null;
+        updateData.cliente_final_endereco = clienteFinal.endereco || null;
+        updateData.cidade_cliente_final = clienteFinal.cidade || null;
+        updateData.estado_cliente_final = clienteFinal.estado || clienteFinal.uf || null;
+      }
+
       const { error } = await supabase
         .from("cotacoes_compras")
-        .update({
-          condicao_pagamento: formData.condicao_pagamento,
-          prazo_entrega: formData.prazo_entrega,
-          validade: formData.validade,
-          observacoes: formData.observacoes,
-          taxa_cambio: formData.taxa_cambio,
-        })
+        .update(updateData)
         .eq("id", cotacao.id);
 
       if (error) throw error;
@@ -277,6 +341,44 @@ export function CotacaoEditDialog({
               <h3 className="font-semibold mb-4">Cabeçalho da Cotação</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label>Tipo da Cotação</Label>
+                  <Select
+                    value={formData.tipo_cotacao}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, tipo_cotacao: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="COMPRA_DIRETA">Compra Direta</SelectItem>
+                      <SelectItem value="VENDA_AGENCIAVEL">Venda Agenciável</SelectItem>
+                      <SelectItem value="LOCACAO_AGENCIAVEL">Locação Agenciável</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Nº da Proposta</Label>
+                  <Input
+                    value={formData.proposta_numero}
+                    onChange={(e) =>
+                      setFormData({ ...formData, proposta_numero: e.target.value })
+                    }
+                    placeholder="Ex: #4097826"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nº do Pedido</Label>
+                  <Input
+                    value={formData.pedido_numero}
+                    onChange={(e) =>
+                      setFormData({ ...formData, pedido_numero: e.target.value })
+                    }
+                    placeholder="Ex: #4097826"
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Condição de Pagamento</Label>
                   <Input
                     value={formData.condicao_pagamento}
@@ -333,6 +435,77 @@ export function CotacaoEditDialog({
                   />
                 </div>
               </div>
+
+              {/* Cliente Final */}
+              {clienteFinal && (
+                <div className="mt-4 p-4 bg-muted rounded-lg border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold">Cliente Final</h4>
+                      {clienteFinal.id ? (
+                        <Badge className="bg-green-500 hover:bg-green-600 text-white">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Cadastrado
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Não cadastrado
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {!clienteFinal.id && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            // TODO: Implementar cadastro de cliente final
+                            toast.info("Funcionalidade de cadastro será implementada");
+                          }}
+                        >
+                          Cadastrar Cliente
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setClienteFinalDialogOpen(true)}
+                      >
+                        <Edit className="h-3 w-3 mr-1" />
+                        Editar
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="font-medium text-muted-foreground">Nome:</span>
+                      <p className="font-medium">{clienteFinal.nome || "—"}</p>
+                    </div>
+                    {clienteFinal.cnpj && (
+                      <div>
+                        <span className="font-medium text-muted-foreground">CNPJ:</span>
+                        <p className="font-mono">{clienteFinal.cnpj}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-medium text-muted-foreground">Cidade:</span>
+                      <p>{clienteFinal.cidade || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-muted-foreground">UF:</span>
+                      <p>{clienteFinal.estado || clienteFinal.uf || "—"}</p>
+                    </div>
+                    {clienteFinal.endereco && (
+                      <div className="col-span-2">
+                        <span className="font-medium text-muted-foreground">Endereço:</span>
+                        <p>{clienteFinal.endereco}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-4 flex justify-end">
                 <Button onClick={handleSaveHeader} disabled={loading}>
                   {loading ? "Salvando..." : "Salvar Cabeçalho"}

@@ -193,10 +193,12 @@ export function ImportacaoInteligenteDialog({
       }
 
       // Detectar moeda automaticamente ou usar a selecionada
+      // IMPORTANTE: A IA já deve ter detectado a moeda corretamente
       const detectedCurrency = result.moeda || selectedCurrency;
       setSelectedCurrency(detectedCurrency);
 
       // Preparar dados completos
+      // Os valores já vêm na moeda correta da IA (não converter aqui)
       const fullData = {
         ...result,
         moeda: detectedCurrency,
@@ -226,26 +228,33 @@ export function ImportacaoInteligenteDialog({
       return;
     }
 
-    // Converter valores se necessário
+    // IMPORTANTE: Os valores já vêm na moeda correta da IA
+    // preco_unitario já está na moeda de origem (USD ou BRL)
+    // Não converter aqui, apenas preparar para o processamento
     const itemsWithConversion = extractedData.items.map((item: any) => {
       const precoUnitario = item.preco_unitario || 0;
-      let valorOriginal = precoUnitario;
-      let valorConvertido = precoUnitario;
-
-      if (selectedCurrency === "USD") {
-        valorOriginal = precoUnitario;
+      const moedaItem = selectedCurrency; // Usar a moeda detectada/selecionada
+      
+      // valor_original = preco_unitario (mesmo valor, na moeda de origem)
+      const valorOriginal = precoUnitario;
+      
+      // valor_convertido: se USD, converter para BRL; se BRL, manter igual
+      let valorConvertido: number;
+      if (moedaItem === "USD") {
         valorConvertido = precoUnitario * dollarRate;
       } else {
-        valorOriginal = precoUnitario;
-        valorConvertido = precoUnitario;
+        valorConvertido = precoUnitario; // BRL já está em BRL
       }
 
       return {
         ...item,
-        moeda: selectedCurrency,
+        moeda: moedaItem,
+        // IMPORTANTE: valor_original deve ser o valor na moeda de origem
         valor_original: valorOriginal,
+        // valor_convertido é o valor convertido para BRL
         valor_convertido: valorConvertido,
-        custo_dolar: selectedCurrency === "USD" ? precoUnitario : precoUnitario / dollarRate,
+        // custo_dolar: se USD, é o próprio valor; se BRL, converter para USD
+        custo_dolar: moedaItem === "USD" ? precoUnitario : (precoUnitario / dollarRate),
       };
     });
 

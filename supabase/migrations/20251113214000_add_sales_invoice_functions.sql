@@ -229,3 +229,7 @@ COMMENT ON FUNCTION log_sales_order_change IS 'Registra logs automáticos de mud
 
 
 
+
+
+
+

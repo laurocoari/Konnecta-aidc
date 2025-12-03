@@ -32,11 +32,12 @@ import {
   Zap,
   FileText,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, isTableNonExistent, markTableAsNonExistent } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ProdutoFormDialog } from "@/components/Produtos/ProdutoFormDialog";
 import { ImportacaoProdutosDialog } from "@/components/Produtos/ImportacaoProdutosDialog";
 import { CotacaoProdutoDialog } from "@/components/Cotacoes/CotacaoProdutoDialog";
+import { DeleteProductDialog } from "@/components/Produtos/DeleteProductDialog";
 import { importUrovoProducts } from "@/utils/importUrovoProducts";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -58,11 +59,70 @@ export default function Produtos() {
   const [cotacaoDialogOpen, setCotacaoDialogOpen] = useState(false);
   const [selectedProductForCotacao, setSelectedProductForCotacao] = useState<any>(null);
   const [purchasePrices, setPurchasePrices] = useState<Record<string, number>>({});
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [supplierCodesTableExists, setSupplierCodesTableExists] = useState<boolean | null>(null);
 
   useEffect(() => {
+    checkSupplierCodesTableExists();
     loadProducts();
     checkLowStock();
   }, []);
+
+  // Verificar se a tabela product_supplier_codes existe (apenas uma vez)
+  const checkSupplierCodesTableExists = async () => {
+    // Se já verificamos e não existe, não verificar novamente
+    if (supplierCodesTableExists === false || isTableNonExistent('product_supplier_codes')) {
+      setSupplierCodesTableExists(false);
+      return;
+    }
+
+    try {
+      // Tentar uma consulta simples para verificar se a tabela existe
+      // Usar .maybeSingle() para evitar erro quando não há dados
+      const { error } = await supabase
+        .from("product_supplier_codes")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        // Se erro 404, PGRST116 ou PGRST205, tabela não existe
+        if (
+          error.code === "PGRST116" ||
+          error.code === "PGRST205" ||
+          error.status === 404
+        ) {
+          setSupplierCodesTableExists(false);
+          markTableAsNonExistent('product_supplier_codes');
+          return;
+        }
+        // Outros erros: assumir que a tabela existe mas houve outro problema
+        // Não marcar como não existente para não bloquear futuras tentativas
+        if (import.meta.env.DEV) {
+          console.warn("Erro ao verificar tabela product_supplier_codes:", error);
+        }
+        return;
+      }
+      // Se não houve erro, tabela existe
+      setSupplierCodesTableExists(true);
+    } catch (error: any) {
+      // Em caso de erro inesperado, verificar se é 404
+      if (
+        error?.code === "PGRST116" ||
+        error?.code === "PGRST205" ||
+        error?.status === 404
+      ) {
+        setSupplierCodesTableExists(false);
+        markTableAsNonExistent('product_supplier_codes');
+      } else {
+        // Outros erros: não marcar como não existente
+        if (import.meta.env.DEV) {
+          console.warn("Erro inesperado ao verificar tabela:", error);
+        }
+      }
+    }
+  };
 
   // Recarregar produtos quando voltar para a página (para atualizar estoque)
   useEffect(() => {
@@ -102,8 +162,38 @@ export default function Produtos() {
         return;
       }
 
-      // Tentar carregar códigos de fornecedor separadamente (pode não existir ainda)
-      // Dividir em lotes menores para evitar URLs muito longas
+      // Verificar se a tabela não existe no cache global (evita queries desnecessárias)
+      if (isTableNonExistent('product_supplier_codes')) {
+        setSupplierCodesTableExists(false);
+        const processedProducts = productsData.map((product: any) => ({
+          ...product,
+          codigo_fornecedor_principal: product.codigo || null,
+          supplier_principal: null,
+        }));
+        setProducts(processedProducts);
+        setLoading(false);
+        return;
+      }
+
+      // Tentar carregar códigos de fornecedor separadamente (apenas se a tabela existir)
+      // Aguardar verificação inicial se ainda não foi feita
+      if (supplierCodesTableExists === null) {
+        await checkSupplierCodesTableExists();
+      }
+
+      // Se a tabela não existe, pular esta etapa completamente
+      if (supplierCodesTableExists === false || isTableNonExistent('product_supplier_codes')) {
+        const processedProducts = productsData.map((product: any) => ({
+          ...product,
+          codigo_fornecedor_principal: product.codigo || null,
+          supplier_principal: null,
+        }));
+        setProducts(processedProducts);
+        setLoading(false);
+        return;
+      }
+
+      // Se chegou aqui, a tabela existe (ou ainda não verificamos)
       try {
         const productIds = productsData.map((p: any) => p.id);
         
@@ -125,11 +215,15 @@ export default function Produtos() {
             .in("product_id", batch)
             .eq("codigo_principal", true);
 
-          // Se erro 404 ou tabela não existe, ignorar silenciosamente
+          // Se erro 404 ou tabela não existe, marcar como não existente e parar
           if (supplierCodesError) {
-            // Erro 404 significa que a tabela não existe ou não está acessível
-            if (supplierCodesError.code === "PGRST116" || supplierCodesError.status === 404) {
-              // Tabela não existe ou não acessível, continuar sem códigos de fornecedor
+            if (
+              supplierCodesError.code === "PGRST116" ||
+              supplierCodesError.code === "PGRST205" ||
+              supplierCodesError.status === 404
+            ) {
+              setSupplierCodesTableExists(false);
+              markTableAsNonExistent('product_supplier_codes');
               break;
             }
             // Outros erros: logar apenas em desenvolvimento
@@ -163,8 +257,12 @@ export default function Produtos() {
         setProducts(processedProducts);
       } catch (supplierCodesError: any) {
         // Se não conseguir carregar supplier_codes, usar apenas código do produto
-        // Não logar erros esperados (404, tabela não existe)
-        if (supplierCodesError?.code !== "PGRST116" && supplierCodesError?.status !== 404) {
+        // Não logar erros esperados (404, PGRST116, PGRST205 - tabela não existe)
+        if (
+          supplierCodesError?.code !== "PGRST116" &&
+          supplierCodesError?.code !== "PGRST205" &&
+          supplierCodesError?.status !== 404
+        ) {
           if (import.meta.env.DEV) {
             console.warn("Não foi possível carregar códigos de fornecedor:", supplierCodesError);
           }
@@ -281,16 +379,108 @@ export default function Produtos() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este produto?")) return;
+  const handleDelete = (product: any) => {
+    setProductToDelete({ id: product.id, nome: product.nome });
+    setDeleteDialogOpen(true);
+  };
 
-    const { error } = await supabase.from("products").delete().eq("id", id);
+  const confirmDelete = async () => {
+    if (!productToDelete) return;
 
-    if (error) {
-      toast.error("Erro ao excluir produto");
-    } else {
-      toast.success("Produto excluído com sucesso");
-      loadProducts();
+    try {
+      // Primeiro, verificar se há registros relacionados que impedem a exclusão
+      // Verificar se há itens em cotações de compra
+      const { data: cotacoesItems, error: cotacoesError } = await supabase
+        .from("cotacoes_compras_itens")
+        .select("id")
+        .eq("product_id", productToDelete.id)
+        .limit(1);
+
+      if (cotacoesError && cotacoesError.code !== "PGRST116") {
+        throw cotacoesError;
+      }
+
+      if (cotacoesItems && cotacoesItems.length > 0) {
+        toast.error(
+          "Não é possível excluir este produto pois ele está vinculado a uma ou mais cotações de compra."
+        );
+        setDeleteDialogOpen(false);
+        setProductToDelete(null);
+        return;
+      }
+
+      // Verificar se há itens em pedidos de compra
+      const { data: purchaseItems, error: purchaseError } = await supabase
+        .from("purchase_order_items")
+        .select("id")
+        .eq("product_id", productToDelete.id)
+        .limit(1);
+
+      if (purchaseError && purchaseError.code !== "PGRST116") {
+        throw purchaseError;
+      }
+
+      if (purchaseItems && purchaseItems.length > 0) {
+        toast.error(
+          "Não é possível excluir este produto pois ele está vinculado a um ou mais pedidos de compra."
+        );
+        setDeleteDialogOpen(false);
+        setProductToDelete(null);
+        return;
+      }
+
+      // Verificar se há itens em pedidos de venda
+      const { data: salesItems, error: salesError } = await supabase
+        .from("sales_order_items")
+        .select("id")
+        .eq("product_id", productToDelete.id)
+        .limit(1);
+
+      if (salesError && salesError.code !== "PGRST116") {
+        throw salesError;
+      }
+
+      if (salesItems && salesItems.length > 0) {
+        toast.error(
+          "Não é possível excluir este produto pois ele está vinculado a um ou mais pedidos de venda."
+        );
+        setDeleteDialogOpen(false);
+        setProductToDelete(null);
+        return;
+      }
+
+      // Tentar excluir o produto
+      const { error } = await supabase
+        .from("products")
+        .delete()
+        .eq("id", productToDelete.id);
+
+      if (error) {
+        console.error("Erro ao excluir produto:", error);
+        
+        // Tratar erros específicos
+        if (error.code === "23503") {
+          toast.error(
+            "Não é possível excluir este produto pois ele está sendo referenciado por outros registros."
+          );
+        } else if (error.code === "PGRST301" || error.status === 409) {
+          toast.error(
+            "Conflito ao excluir produto. Verifique se não há registros relacionados."
+          );
+        } else {
+          toast.error(`Erro ao excluir produto: ${error.message || "Erro desconhecido"}`);
+        }
+      } else {
+        toast.success("Produto excluído com sucesso");
+        loadProducts();
+        checkLowStock();
+      }
+    } catch (error: any) {
+      console.error("Erro ao excluir produto:", error);
+      toast.error(`Erro ao excluir produto: ${error.message || "Erro desconhecido"}`);
+    } finally {
+      setDeleteDialogOpen(false);
+      setProductToDelete(null);
     }
   };
 
@@ -621,7 +811,7 @@ export default function Produtos() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleDelete(product.id)}
+                              onClick={() => handleDelete(product)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -674,6 +864,15 @@ export default function Produtos() {
           }}
           productId={selectedProductForCotacao.id}
           productName={selectedProductForCotacao.nome}
+        />
+      )}
+
+      {productToDelete && (
+        <DeleteProductDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          productName={productToDelete.nome}
+          onConfirm={confirmDelete}
         />
       )}
     </div>

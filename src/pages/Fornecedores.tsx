@@ -48,20 +48,23 @@ export default function Fornecedores() {
       // Load brands for each supplier
       if (data && data.length > 0) {
         const supplierIds = data.map((s) => s.id);
+        // Especificar a foreign key correta para evitar ambiguidade
         const { data: brandsData, error: brandsError } = await supabase
           .from("supplier_brands")
-          .select("supplier_id, brand_id, brands(nome)")
+          .select("supplier_id, brand_id, brands!supplier_brands_brand_id_fkey(nome)")
           .in("supplier_id", supplierIds);
 
         if (brandsError) {
           console.error("Error loading brands:", brandsError);
         } else {
           const brandsBySupplier: Record<string, string[]> = {};
-          brandsData.forEach((sb: any) => {
+          brandsData?.forEach((sb: any) => {
             if (!brandsBySupplier[sb.supplier_id]) {
               brandsBySupplier[sb.supplier_id] = [];
             }
-            brandsBySupplier[sb.supplier_id].push(sb.brands.nome);
+            if (sb.brands && sb.brands.nome) {
+              brandsBySupplier[sb.supplier_id].push(sb.brands.nome);
+            }
           });
           setSupplierBrands(brandsBySupplier);
         }

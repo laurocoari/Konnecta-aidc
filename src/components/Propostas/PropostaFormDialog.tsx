@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,10 +16,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TipoOperacaoSelector } from "./TipoOperacaoSelector";
 import { FinancialSummaryPanel } from "./FinancialSummaryPanel";
+import { ResumoFinanceiroPanel } from "./ResumoFinanceiroPanel";
 import { calcularCustoLocacaoDireta, calcularValorComMargem } from "@/hooks/useProposalCalculations";
 import { logger } from "@/lib/logger";
 import { createAccountsReceivableFromProposal } from "@/lib/proposalAccountsReceivableService";
 import { createRentalReceiptFromProposal } from "@/lib/rentalReceiptService";
+import { SelecionarCotacoesDialog } from "./SelecionarCotacoesDialog";
+import { ItensCotacoesSelecionadas, ItemSelecionado } from "./ItensCotacoesSelecionadas";
+import { CotacaoCompleta } from "@/lib/cotacoesService";
+import { searchProductsInSupabase } from "@/lib/supabaseProductSearch";
+import { TabelaItensProposta } from "./TabelaItensProposta";
+import { DialogAdicionarProduto } from "./DialogAdicionarProduto";
 
 interface PropostaFormDialogProps {
   open: boolean;
@@ -28,7 +35,7 @@ interface PropostaFormDialogProps {
   onSuccess: (salesOrderCreated?: any) => void;
 }
 
-interface ProposalItem {
+export interface ProposalItem {
   id?: string;
   product_id?: string;
   fornecedor_id?: string;
@@ -47,6 +54,20 @@ interface ProposalItem {
   estoque?: number;
   imagem_url?: string;
   vida_util_meses?: number;
+  // Campos de origem da cotação
+  cotacao_id?: string;
+  cotacao_item_id?: string;
+  cotacao_numero?: string;
+  custo_origem?: number;
+  moeda_origem?: string;
+  taxa_cambio_origem?: number | null;
+  fornecedor_origem_id?: string;
+  // Novos campos para auditoria completa
+  valor_original_unitario?: number;
+  valor_convertido_brl?: number;
+  valor_convertido_usd?: number;
+  valor_escolhido_para_proposta?: number;
+  moeda_escolhida?: string;
 }
 
 export default function PropostaFormDialog({
@@ -64,6 +85,15 @@ export default function PropostaFormDialog({
   const [searchProduto, setSearchProduto] = useState("");
   const [items, setItems] = useState<ProposalItem[]>([]);
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
+  const [produtosBuscaSupabase, setProdutosBuscaSupabase] = useState<any[]>([]);
+  const [buscandoProdutos, setBuscandoProdutos] = useState(false);
+  const [produtoSelecionado, setProdutoSelecionado] = useState<any>(null);
+  const [dialogAdicionarProdutoOpen, setDialogAdicionarProdutoOpen] = useState(false);
+  
+  // Estados para integração com cotações
+  const [selecionarCotacoesDialogOpen, setSelecionarCotacoesDialogOpen] = useState(false);
+  const [itensCotacoesDialogOpen, setItensCotacoesDialogOpen] = useState(false);
+  const [cotacoesSelecionadas, setCotacoesSelecionadas] = useState<CotacaoCompleta[]>([]);
   
   const [formData, setFormData] = useState({
     modelo_id: "",
@@ -414,7 +444,8 @@ export default function PropostaFormDialog({
         product_id: item.product_id,
         fornecedor_id: item.fornecedor_id || undefined,
         descricao: item.descricao || item.product?.nome || "",
-        codigo: item.codigo || item.product?.codigo || "",
+        // Sempre usar código interno do produto quando disponível
+        codigo: item.product?.codigo || item.codigo || "",
         unidade: item.unidade || item.product?.unidade || "un",
         quantidade: item.quantidade,
         custo_unitario: item.custo_unitario || item.product?.custo_medio || 0,
@@ -474,74 +505,63 @@ export default function PropostaFormDialog({
     }
   };
 
-  const addProduto = (produto: any) => {
-    logger.ui(`Adicionando produto à proposta: ${produto.nome} (${produto.codigo})`);
+  const handleProdutoClick = (produto: any) => {
+    setProdutoSelecionado(produto);
+    setDialogAdicionarProdutoOpen(true);
+  };
+
+  const handleConfirmarAdicionarProduto = (quantidade: number, precoUnitario: number, desconto: number) => {
+    if (!produtoSelecionado) return;
+
+    logger.ui(`Adicionando produto à proposta: ${produtoSelecionado.nome} (${produtoSelecionado.codigo})`);
     
-    const custoMedio = produto.custo_medio || 0;
+    const custoMedio = produtoSelecionado.custo_medio || 0;
     const isLocacao = formData.tipo_operacao.includes('locacao');
     
-    let valorUnitario = 0;
     let custoUnitario = custoMedio;
     
-    if (isLocacao) {
-      // Para locação direta: usar valor de locação ou calcular
-      if (formData.tipo_operacao === 'locacao_direta') {
-        valorUnitario = produto.valor_locacao || 0;
-        custoUnitario = calcularCustoLocacaoDireta(custoMedio, produto.vida_util_meses || 36);
-        logger.ui(`Locação direta: valor_unitario=${valorUnitario}, custo_unitario=${custoUnitario}`);
-      } else {
-        // Para locação agenciada: aguardar input do usuário
-        valorUnitario = 0;
-        custoUnitario = 0;
-        logger.ui("Locação agenciada: valores aguardando input do usuário");
-      }
-    } else {
-      // Para venda direta: usar valor de venda
-      if (formData.tipo_operacao === 'venda_direta') {
-        valorUnitario = produto.valor_venda || 0;
-        if (produto.margem_lucro_venda && custoMedio > 0) {
-          valorUnitario = calcularValorComMargem(custoMedio, produto.margem_lucro_venda);
-        }
-        logger.ui(`Venda direta: valor_unitario=${valorUnitario}, custo_unitario=${custoUnitario}`);
-      } else {
-        // Para venda agenciada: aguardar input do usuário
-        valorUnitario = 0;
-        custoUnitario = 0;
-        logger.ui("Venda agenciada: valores aguardando input do usuário");
-      }
+    if (isLocacao && formData.tipo_operacao === 'locacao_direta') {
+      custoUnitario = calcularCustoLocacaoDireta(custoMedio, produtoSelecionado.vida_util_meses || 36);
     }
+
+    // Calcular subtotal com desconto
+    const periodo = isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : 1;
+    const subtotal = quantidade * precoUnitario * periodo;
+    const descontoValor = (subtotal * desconto) / 100;
+    const total = subtotal - descontoValor;
 
     // Calcular margem (limitada a DECIMAL(5,2) = máximo 999.99)
     let margem = 0;
     if (custoUnitario > 0) {
-      margem = ((valorUnitario - custoUnitario) / custoUnitario) * 100;
+      margem = ((precoUnitario - custoUnitario) / custoUnitario) * 100;
       // Limitar a 999.99% (limite do DECIMAL(5,2))
       margem = Math.min(Math.max(margem, -999.99), 999.99);
       margem = parseFloat(margem.toFixed(2));
     }
 
     const newItem: ProposalItem = {
-      product_id: produto.id,
-      descricao: produto.nome || produto.descricao || "",
-      codigo: produto.codigo || "",
-      unidade: produto.unidade || "un",
-      quantidade: 1,
+      product_id: produtoSelecionado.id,
+      descricao: produtoSelecionado.nome || produtoSelecionado.descricao || "",
+      codigo: produtoSelecionado.codigo || "",
+      unidade: produtoSelecionado.unidade || "un",
+      quantidade: quantidade,
       custo_unitario: custoUnitario,
-      valor_unitario: valorUnitario,
-      preco_unitario: valorUnitario, // compatibilidade
-      comissao_percentual: produto.comissao_agenciamento_padrao || 0,
-      periodo_locacao_meses: isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : undefined,
-      desconto: 0,
-      total: valorUnitario,
+      valor_unitario: precoUnitario,
+      preco_unitario: precoUnitario, // compatibilidade
+      comissao_percentual: produtoSelecionado.comissao_agenciamento_padrao || 0,
+      periodo_locacao_meses: isLocacao ? periodo : undefined,
+      desconto: desconto,
+      total: total,
       margem: margem,
-      estoque: produto.estoque_atual,
-      imagem_url: produto.imagem_principal,
-      vida_util_meses: produto.vida_util_meses || 36,
+      estoque: produtoSelecionado.estoque_atual,
+      imagem_url: produtoSelecionado.imagem_principal,
+      vida_util_meses: produtoSelecionado.vida_util_meses || 36,
     };
 
     logger.ui(`✅ Item adicionado: ${newItem.descricao}, Total: R$ ${newItem.total.toFixed(2)}`);
     setItems([...items, newItem]);
     setSearchProduto("");
+    setProdutoSelecionado(null);
   };
 
   const updateItem = (index: number, field: keyof ProposalItem, value: any) => {
@@ -575,6 +595,126 @@ export default function PropostaFormDialog({
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
+  };
+
+  // Handlers para integração com cotações
+  const handleSelecionarCotacoes = () => {
+    setSelecionarCotacoesDialogOpen(true);
+  };
+
+  const handleCotacoesSelecionadas = (cotacoes: CotacaoCompleta[]) => {
+    setCotacoesSelecionadas(cotacoes);
+    setSelecionarCotacoesDialogOpen(false);
+    setItensCotacoesDialogOpen(true);
+  };
+
+  const handleImportarItensCotacoes = (itensSelecionados: ItemSelecionado[]) => {
+    logger.ui(`Importando ${itensSelecionados.length} itens de cotações para a proposta`);
+    
+    const novosItens: ProposalItem[] = itensSelecionados.map((itemSelecionado) => {
+      const { 
+        cotacao, 
+        item, 
+        valorOriginal,
+        valorConvertidoBRL,
+        valorConvertidoUSD,
+        valorEscolhido,
+        moedaEscolhida,
+        modoConversao
+      } = itemSelecionado;
+      
+      // REGRA DE OURO: valorEscolhido é EXATAMENTE o valor mostrado em "Custo a usar"
+      // Usar esse valor diretamente, sem recalcular nada
+      const custoUnitario = valorEscolhido;
+      
+      // Log para validação
+      if (process.env.NODE_ENV === 'development') {
+        logger.ui(`[COTAÇÃO] Importando item: ${item.descricao}`, {
+          valorOriginal,
+          valorConvertidoBRL,
+          valorConvertidoUSD,
+          valorEscolhido,
+          moedaEscolhida,
+          modoConversao,
+          quantidade: item.quantidade,
+        });
+      }
+      
+      // Calcular valor unitário inicial (pode ser ajustado pelo usuário depois)
+      // Para agenciada, começar com o custo escolhido (sem margem inicial)
+      let valorUnitario = custoUnitario;
+      const isLocacao = formData.tipo_operacao.includes('locacao');
+      
+      // Se for locação agenciada, usar período padrão
+      const periodoLocacao = isLocacao ? (formData.condicoes_comerciais.prazo_locacao_meses || 12) : 1;
+      
+      // Calcular margem inicial (0% por padrão para agenciada)
+      let margem = 0;
+      if (custoUnitario > 0 && valorUnitario > 0) {
+        margem = ((valorUnitario - custoUnitario) / custoUnitario) * 100;
+        margem = Math.min(Math.max(margem, -999.99), 999.99);
+        margem = parseFloat(margem.toFixed(2));
+      }
+      
+      // Calcular subtotal: quantidade * valor_unitario * período (se locação)
+      const subtotal = item.quantidade * valorUnitario * periodoLocacao;
+      
+      const newItem: ProposalItem = {
+        product_id: item.product_id || undefined,
+        fornecedor_id: cotacao.supplier_id || undefined,
+        descricao: item.descricao,
+        codigo: item.part_number || item.descricao.substring(0, 20) || "",
+        unidade: "un",
+        quantidade: item.quantidade,
+        // REGRA DE OURO: custo_unitario = valorEscolhido (exatamente o "Custo a usar")
+        custo_unitario: custoUnitario,
+        valor_unitario: valorUnitario,
+        preco_unitario: valorUnitario, // compatibilidade
+        comissao_percentual: 0, // Pode ser ajustado depois
+        periodo_locacao_meses: isLocacao ? periodoLocacao : undefined,
+        desconto: 0,
+        total: subtotal,
+        margem: margem,
+        estoque: undefined,
+        imagem_url: undefined,
+        vida_util_meses: 36,
+        // Campos de origem da cotação (auditoria completa)
+        cotacao_id: cotacao.id,
+        cotacao_item_id: item.id,
+        cotacao_numero: cotacao.numero_cotacao,
+        fornecedor_origem_id: cotacao.supplier_id,
+        // Valores originais da cotação
+        custo_origem: item.preco_unitario, // Mantido para compatibilidade
+        valor_original_unitario: valorOriginal,
+        moeda_origem: item.moeda || cotacao.moeda,
+        taxa_cambio_origem: cotacao.taxa_cambio,
+        // Valores convertidos
+        valor_convertido_brl: valorConvertidoBRL,
+        valor_convertido_usd: valorConvertidoUSD,
+        // Valor escolhido e modo
+        valor_escolhido_para_proposta: valorEscolhido,
+        moeda_escolhida: moedaEscolhida,
+      };
+      
+      // Log final para validação
+      if (process.env.NODE_ENV === 'development') {
+        logger.ui(`[COTAÇÃO] Item criado: ${newItem.descricao}`, {
+          custo_unitario: newItem.custo_unitario,
+          valor_original_unitario: newItem.valor_original_unitario,
+          valor_convertido_brl: newItem.valor_convertido_brl,
+          valor_convertido_usd: newItem.valor_convertido_usd,
+          valor_escolhido_para_proposta: newItem.valor_escolhido_para_proposta,
+          moeda_escolhida: newItem.moeda_escolhida,
+        });
+      }
+      
+      return newItem;
+    });
+    
+    setItems([...items, ...novosItens]);
+    setItensCotacoesDialogOpen(false);
+    setCotacoesSelecionadas([]);
+    toast.success(`${itensSelecionados.length} item(ns) importado(s) da(s) cotação(ões)`);
   };
 
   const calcularTotais = () => {
@@ -701,6 +841,15 @@ export default function PropostaFormDialog({
 
       const codigo = proposta?.codigo || await gerarCodigo();
 
+      // Coletar IDs únicos das cotações usadas nos itens
+      const cotacoesIds = Array.from(
+        new Set(
+          items
+            .filter((item) => item.cotacao_id)
+            .map((item) => item.cotacao_id!)
+        )
+      );
+
       // Arredondar todos os valores monetários para 2 casas decimais
       const proposalData = {
         codigo,
@@ -723,6 +872,7 @@ export default function PropostaFormDialog({
         despesas_adicionais: Math.round(formData.despesas_adicionais * 100) / 100,
         total_geral: Math.round(totalGeral * 100) / 100,
         status: formData.status,
+        cotacoes_ids: cotacoesIds.length > 0 ? cotacoesIds : null,
       };
 
       let proposalId = proposta?.id;
@@ -774,12 +924,22 @@ export default function PropostaFormDialog({
         const periodo = item.periodo_locacao_meses || 1;
         const lucroSubtotal = (item.valor_unitario - item.custo_unitario) * item.quantidade * periodo;
         
+        // Buscar código interno do produto se houver product_id
+        let codigoInterno = item.codigo;
+        if (item.product_id) {
+          const produto = produtos.find(p => p.id === item.product_id);
+          if (produto?.codigo) {
+            codigoInterno = produto.codigo;
+          }
+        }
+        
         return {
           proposal_id: proposalId,
           product_id: item.product_id ? cleanUUID(item.product_id) : null,
           fornecedor_id: item.fornecedor_id ? cleanUUID(item.fornecedor_id) : null,
           descricao: item.descricao,
-          codigo: item.codigo,
+          // Sempre salvar código interno do produto (não código do fornecedor)
+          codigo: codigoInterno || "",
           unidade: item.unidade,
           quantidade: item.quantidade,
           custo_unitario: Math.round(item.custo_unitario * 100) / 100,
@@ -793,6 +953,22 @@ export default function PropostaFormDialog({
           estoque: item.estoque,
           imagem_url: item.imagem_url,
           lucro_subtotal: Math.round(lucroSubtotal * 100) / 100,
+          // Campos de origem da cotação (auditoria completa)
+          cotacao_id: item.cotacao_id ? cleanUUID(item.cotacao_id) : null,
+          cotacao_item_id: item.cotacao_item_id ? cleanUUID(item.cotacao_item_id) : null,
+          cotacao_numero: item.cotacao_numero || null,
+          fornecedor_origem_id: item.fornecedor_origem_id ? cleanUUID(item.fornecedor_origem_id) : null,
+          // Valores originais da cotação
+          custo_origem: item.custo_origem ? Math.round(item.custo_origem * 100) / 100 : null, // Mantido para compatibilidade
+          valor_original_unitario: item.valor_original_unitario ? Math.round(item.valor_original_unitario * 100) / 100 : null,
+          moeda_origem: item.moeda_origem || null,
+          taxa_cambio_origem: item.taxa_cambio_origem ? Math.round(item.taxa_cambio_origem * 10000) / 10000 : null,
+          // Valores convertidos
+          valor_convertido_brl: item.valor_convertido_brl ? Math.round(item.valor_convertido_brl * 100) / 100 : null,
+          valor_convertido_usd: item.valor_convertido_usd ? Math.round(item.valor_convertido_usd * 100) / 100 : null,
+          // Valor escolhido e modo
+          valor_escolhido_para_proposta: item.valor_escolhido_para_proposta ? Math.round(item.valor_escolhido_para_proposta * 100) / 100 : null,
+          moeda_escolhida: item.moeda_escolhida || null,
         };
       });
 
@@ -923,16 +1099,20 @@ export default function PropostaFormDialog({
   const calculations = (() => {
     const calcItems = items.map(item => {
       const periodo = item.periodo_locacao_meses || 1;
-      let valor_subtotal = 0;
+      let valor_subtotal_bruto = 0;
       let custo_subtotal = 0;
       
       if (formData.tipo_operacao.includes('locacao')) {
-        valor_subtotal = item.valor_unitario * item.quantidade * periodo;
+        valor_subtotal_bruto = item.valor_unitario * item.quantidade * periodo;
         custo_subtotal = item.custo_unitario * item.quantidade * periodo;
       } else {
-        valor_subtotal = item.valor_unitario * item.quantidade;
+        valor_subtotal_bruto = item.valor_unitario * item.quantidade;
         custo_subtotal = item.custo_unitario * item.quantidade;
       }
+      
+      // Aplicar desconto ao subtotal
+      const desconto_valor = (valor_subtotal_bruto * item.desconto) / 100;
+      const valor_subtotal = valor_subtotal_bruto - desconto_valor;
       
       return { valor_subtotal, custo_subtotal };
     });
@@ -941,7 +1121,10 @@ export default function PropostaFormDialog({
     const custo_total = calcItems.reduce((sum, calc) => sum + calc.custo_subtotal, 0);
     const lucro_total = valor_total - custo_total;
     // Margem sobre o custo (padrão comercial) - não sobre o valor de venda
-    const margem_percentual = custo_total > 0 ? (lucro_total / custo_total) * 100 : 0;
+    // Tratamento para dividir por zero quando Valor Total for 0
+    const margem_percentual = valor_total > 0 
+      ? (lucro_total / valor_total) * 100 
+      : (custo_total > 0 ? (lucro_total / custo_total) * 100 : 0);
     
     return {
       valor_total,
@@ -950,25 +1133,104 @@ export default function PropostaFormDialog({
       margem_percentual: Number(margem_percentual.toFixed(2))
     };
   })();
-  
-  const filteredProdutos = produtos.filter(p => {
-    // Se não há busca, mostrar todos os produtos (filtrados apenas por tipo)
-    const matchesSearch = !searchProduto || 
-      p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
-      p.codigo?.toLowerCase().includes(searchProduto.toLowerCase()) ||
-      p.sku_interno?.toLowerCase().includes(searchProduto.toLowerCase());
+
+  // Buscar produtos no Supabase quando necessário (apenas quando há busca)
+  useEffect(() => {
+    // Se não há busca ou busca muito curta, limpar resultados da busca
+    if (!searchProduto || searchProduto.trim().length < 2) {
+      setProdutosBuscaSupabase([]);
+      setBuscandoProdutos(false);
+      return;
+    }
+
+    // Debounce para evitar muitas buscas
+    const timeoutId = setTimeout(async () => {
+      setBuscandoProdutos(true);
+      try {
+        // Buscar produtos no Supabase
+        const resultados = await searchProductsInSupabase(searchProduto);
+        
+        if (resultados.length > 0) {
+          // Buscar dados completos dos produtos encontrados
+          const ids = resultados.map(r => r.id);
+          const { data: produtosCompletos, error } = await supabase
+            .from("products")
+            .select(`
+              *,
+              brand:brands(
+                id,
+                nome,
+                logo_url
+              )
+            `)
+            .in("id", ids)
+            .eq("status", "ativo");
+          
+          if (!error && produtosCompletos) {
+            setProdutosBuscaSupabase(produtosCompletos);
+          } else {
+            setProdutosBuscaSupabase([]);
+          }
+        } else {
+          setProdutosBuscaSupabase([]);
+        }
+      } catch (error) {
+        logger.error("DB", "Erro ao buscar produtos no Supabase", error);
+        setProdutosBuscaSupabase([]);
+      } finally {
+        setBuscandoProdutos(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchProduto]);
+
+  // Combinar produtos locais com produtos da busca no Supabase
+  const todosProdutos = useMemo(() => {
+    const produtosUnicos = new Map<string, any>();
     
-    if (!matchesSearch) return false;
+    // Sempre adicionar produtos locais primeiro (base completa)
+    produtos.forEach(p => produtosUnicos.set(p.id, p));
     
-    // Filtrar por tipo de disponibilidade
-    if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
-      return p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos';
-    } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
-      return p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos';
+    // Se há busca com 2+ caracteres e encontrou resultados no Supabase, adicionar/atualizar com produtos da busca
+    // Isso garante que produtos encontrados no Supabase (que podem não estar nos locais) sejam incluídos
+    if (searchProduto && searchProduto.trim().length >= 2 && produtosBuscaSupabase.length > 0) {
+      produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
     }
     
-    return true;
-  });
+    return Array.from(produtosUnicos.values());
+  }, [produtos, produtosBuscaSupabase, searchProduto]);
+  
+  const filteredProdutos = useMemo(() => {
+    if (todosProdutos.length === 0) return [];
+    
+    return todosProdutos.filter(p => {
+      // Se há busca, verificar se o produto corresponde
+      if (searchProduto && searchProduto.trim().length > 0) {
+        const termoBusca = searchProduto.toLowerCase().trim();
+        const matchesSearch = 
+          p.nome?.toLowerCase().includes(termoBusca) ||
+          p.codigo?.toLowerCase().includes(termoBusca) ||
+          p.sku_interno?.toLowerCase().includes(termoBusca) ||
+          p.codigo_fabricante?.toLowerCase().includes(termoBusca) ||
+          p.descricao?.toLowerCase().includes(termoBusca);
+        
+        if (!matchesSearch) return false;
+      }
+      
+      // Filtrar por tipo de disponibilidade apenas se tipo_operacao estiver definido
+      if (formData.tipo_operacao) {
+        if (formData.tipo_operacao === 'venda_direta' || formData.tipo_operacao === 'venda_agenciada') {
+          return p.tipo_disponibilidade === 'venda' || p.tipo_disponibilidade === 'ambos';
+        } else if (formData.tipo_operacao === 'locacao_direta' || formData.tipo_operacao === 'locacao_agenciada') {
+          return p.tipo_disponibilidade === 'locacao' || p.tipo_disponibilidade === 'ambos';
+        }
+      }
+      
+      // Se não há tipo_operacao definido, mostrar todos os produtos
+      return true;
+    });
+  }, [todosProdutos, searchProduto, formData.tipo_operacao]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1024,6 +1286,40 @@ export default function PropostaFormDialog({
                   }}
                   disabled={loading}
                 />
+
+                {/* Bloco de Seleção de Cotações - Apenas para Venda Agenciada ou Locação Agenciada */}
+                {(formData.tipo_operacao === 'venda_agenciada' || formData.tipo_operacao === 'locacao_agenciada') && (
+                  <Card className="p-4 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-base font-semibold">Selecionar Cotação(es)</Label>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Busque e selecione cotações de compras para importar itens para esta proposta
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleSelecionarCotacoes}
+                          disabled={loading}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Buscar Cotações
+                        </Button>
+                      </div>
+                      {cotacoesSelecionadas.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {cotacoesSelecionadas.map((cotacao) => (
+                            <Badge key={cotacao.id} variant="secondary">
+                              {cotacao.numero_cotacao}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
 
                 <div>
                   <Label>Selecionar Modelo (Opcional)</Label>
@@ -1264,6 +1560,7 @@ export default function PropostaFormDialog({
               </TabsContent>
 
               <TabsContent value="itens" className="space-y-4">
+                {/* Resumo Financeiro no topo */}
                 <FinancialSummaryPanel
                   valorTotal={calculations.valor_total}
                   custoTotal={calculations.custo_total}
@@ -1271,275 +1568,140 @@ export default function PropostaFormDialog({
                   margemPercentual={calculations.margem_percentual}
                 />
 
-                <Card className="p-4">
-                  <div className="flex gap-2 mb-4">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar produto por nome ou código..."
-                        value={searchProduto}
-                        onChange={(e) => setSearchProduto(e.target.value)}
-                        className="pl-9"
-                      />
-                    </div>
+                {/* Botão para adicionar itens de cotações - Apenas para Venda Agenciada ou Locação Agenciada */}
+                {(formData.tipo_operacao === 'venda_agenciada' || formData.tipo_operacao === 'locacao_agenciada') && (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSelecionarCotacoes}
+                      disabled={loading}
+                      className="flex-1"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Adicionar Itens da Cotação
+                    </Button>
                   </div>
+                )}
 
-                  {filteredProdutos.length > 0 ? (
-                    <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-                      {filteredProdutos.map((produto) => (
-                        <div
-                          key={produto.id}
-                          className="flex items-center justify-between p-2 border rounded cursor-pointer hover:bg-accent transition-colors"
-                          onClick={() => addProduto(produto)}
-                        >
-                          <div className="flex items-center gap-2 flex-1">
+                {/* A) Tabela de Itens da Proposta */}
+                <div className="space-y-2">
+                  <h3 className="text-base font-semibold">Itens da Proposta</h3>
+                  <TabelaItensProposta
+                    items={items}
+                    tipoOperacao={formData.tipo_operacao}
+                    onUpdateItem={updateItem}
+                    onRemoveItem={removeItem}
+                  />
+                </div>
+
+                {/* B) Busca e Catálogo de Produtos */}
+                <div className="space-y-2">
+                  <h3 className="text-base font-semibold">Buscar Produtos</h3>
+                  <Card className="p-4">
+                    <div className="flex gap-2 mb-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar produto por nome ou código..."
+                          value={searchProduto}
+                          onChange={(e) => setSearchProduto(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
+
+                    {filteredProdutos.length > 0 ? (
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        {filteredProdutos.map((produto) => (
+                          <div
+                            key={produto.id}
+                            className="flex items-center gap-2 p-1.5 border rounded cursor-pointer hover:bg-accent transition-colors"
+                            onClick={() => handleProdutoClick(produto)}
+                          >
                             {produto.imagem_principal && (
                               <img
                                 src={produto.imagem_principal}
                                 alt={produto.nome}
-                                className="h-10 w-10 object-cover rounded"
+                                className="h-8 w-8 object-cover rounded flex-shrink-0"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                               />
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{produto.nome}</p>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <p className="font-medium text-sm truncate leading-tight">{produto.nome}</p>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
                                 {produto.sku_interno && (
+                                  <span className="font-mono">{produto.sku_interno}</span>
+                                )}
+                                {produto.codigo && produto.codigo !== produto.sku_interno && (
                                   <>
-                                    <span className="font-mono">{produto.sku_interno}</span>
-                                    <span>•</span>
+                                    {produto.sku_interno && <span>•</span>}
+                                    <span className="truncate">{produto.codigo}</span>
                                   </>
                                 )}
-                                <span>{produto.codigo || 'N/A'}</span>
                                 {produto.brand && (
                                   <>
-                                    <span>•</span>
-                                    <span className="font-medium">{produto.brand.nome}</span>
+                                    {(produto.sku_interno || produto.codigo) && <span>•</span>}
+                                    <span className="font-medium truncate">{produto.brand.nome}</span>
                                   </>
                                 )}
-                                <span>•</span>
-                                <span>Estoque: {produto.estoque_atual || 0}</span>
-                                {produto.categoria && (
-                                  <>
-                                    <span>•</span>
-                                    <span>{produto.categoria}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            {produto.valor_venda ? (
-                              <p className="font-semibold text-success">
-                                R$ {produto.valor_venda.toFixed(2)}
-                              </p>
-                            ) : produto.valor_locacao ? (
-                              <p className="font-semibold text-success text-sm">
-                                Locação: R$ {produto.valor_locacao.toFixed(2)}/mês
-                              </p>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">Sem preço</span>
-                            )}
-                            {produto.custo_medio && (
-                              <p className="text-xs text-muted-foreground">
-                                Custo: R$ {produto.custo_medio.toFixed(2)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      {searchProduto ? (
-                        <p>Nenhum produto encontrado para "{searchProduto}"</p>
-                      ) : produtos.length === 0 ? (
-                        <p>Nenhum produto disponível</p>
-                      ) : (
-                        <p>Digite para buscar produtos ou selecione um tipo de operação</p>
-                      )}
-                    </div>
-                  )}
-                </Card>
-
-                <div className="space-y-2">
-                  {items.map((item, index) => {
-                    const isAgenciada = formData.tipo_operacao.includes('agenciada');
-                    const isLocacao = formData.tipo_operacao.includes('locacao');
-                    
-                    return (
-                      <Card key={index} className="p-4">
-                        <div className="space-y-4">
-                          {/* Header do Item com informações do produto */}
-                          {item.product_id && (
-                            <div className="flex items-center gap-3 pb-3 border-b">
-                              {item.imagem_url && (
-                                <img
-                                  src={item.imagem_url}
-                                  alt={item.descricao}
-                                  className="h-12 w-12 object-cover rounded"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                  }}
-                                />
-                              )}
-                              <div className="flex-1">
-                                <p className="font-medium">{item.descricao}</p>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span>Código: {item.codigo}</span>
-                                  {item.estoque !== undefined && (
+                                <span className="ml-auto flex items-center gap-1.5">
+                                  {produto.estoque_atual !== undefined && (
                                     <>
-                                      <span>•</span>
-                                      <span>Estoque: {item.estoque}</span>
+                                      <span className="hidden sm:inline">Est:</span>
+                                      <span className={produto.estoque_atual > 0 ? "text-green-600" : "text-muted-foreground"}>
+                                        {produto.estoque_atual || 0}
+                                      </span>
                                     </>
                                   )}
-                                </div>
+                                </span>
                               </div>
                             </div>
-                          )}
-                          
-                          {/* Linha 1: Descrição e Fornecedor (se agenciada) */}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div>
-                              <Label>Descrição</Label>
-                              <Input
-                                value={item.descricao}
-                                onChange={(e) =>
-                                  updateItem(index, "descricao", e.target.value)
-                                }
-                                placeholder="Descrição do item"
-                              />
-                            </div>
-                            {isAgenciada && (
-                              <div>
-                                <Label>Fornecedor *</Label>
-                                <Select
-                                  value={item.fornecedor_id}
-                                  onValueChange={(value) =>
-                                    updateItem(index, "fornecedor_id", value)
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Selecione o fornecedor" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {fornecedores.map((fornecedor) => (
-                                      <SelectItem key={fornecedor.id} value={fornecedor.id}>
-                                        <div className="flex flex-col">
-                                          <span className="font-medium">{fornecedor.nome}</span>
-                                          {fornecedor.cnpj && (
-                                            <span className="text-xs text-muted-foreground">
-                                              CNPJ: {fornecedor.cnpj}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Linha 2: Campos numéricos */}
-                          <div className="grid gap-4 md:grid-cols-5">
-                            <div>
-                              <Label>Quantidade</Label>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={item.quantidade}
-                                onChange={(e) =>
-                                  updateItem(index, "quantidade", parseInt(e.target.value))
-                                }
-                              />
-                            </div>
-                            <div>
-                              <Label>Custo Unit.</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={item.custo_unitario}
-                                onChange={(e) =>
-                                  updateItem(index, "custo_unitario", parseFloat(e.target.value))
-                                }
-                              />
-                            </div>
-                            <div>
-                              <Label>Valor Unit.</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={item.valor_unitario}
-                                onChange={(e) =>
-                                  updateItem(index, "valor_unitario", parseFloat(e.target.value))
-                                }
-                              />
-                            </div>
-                            {isAgenciada && (
-                              <div>
-                                <Label>Comissão (%)</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={item.comissao_percentual || 0}
-                                  onChange={(e) =>
-                                    updateItem(index, "comissao_percentual", parseFloat(e.target.value))
-                                  }
-                                />
-                              </div>
-                            )}
-                            {isLocacao && (
-                              <div>
-                                <Label>Período (meses) *</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={item.periodo_locacao_meses || 12}
-                                  onChange={(e) =>
-                                    updateItem(index, "periodo_locacao_meses", parseInt(e.target.value))
-                                  }
-                                />
-                              </div>
-                            )}
-                            <div className="flex items-end gap-2">
-                              <div className="flex-1">
-                                <Label>Total</Label>
-                                <Input
-                                  value={`R$ ${item.total.toFixed(2)}`}
-                                  disabled
-                                />
-                              </div>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="icon"
-                                onClick={() => removeItem(index)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                            <div className="text-right flex-shrink-0 ml-2">
+                              {produto.valor_venda ? (
+                                <p className="font-semibold text-sm text-success leading-tight">
+                                  R$ {produto.valor_venda.toFixed(2)}
+                                </p>
+                              ) : produto.valor_locacao ? (
+                                <p className="font-semibold text-xs text-success leading-tight">
+                                  R$ {produto.valor_locacao.toFixed(2)}/mês
+                                </p>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">Sem preço</span>
+                              )}
+                              {produto.custo_medio && (
+                                <p className="text-xs text-muted-foreground leading-tight">
+                                  Custo: R$ {produto.custo_medio.toFixed(2)}
+                                </p>
+                              )}
                             </div>
                           </div>
-
-                          {/* Informações adicionais */}
-                          <div className="flex gap-4 text-xs text-muted-foreground">
-                            {item.margem !== undefined && (
-                              <span>Margem: {item.margem.toFixed(2)}%</span>
-                            )}
-                            {item.estoque !== undefined && !isAgenciada && (
-                              <span>Estoque: {item.estoque}</span>
-                            )}
-                            {isLocacao && item.periodo_locacao_meses && (
-                              <span>Total do Período: R$ {(item.valor_unitario * item.quantidade * item.periodo_locacao_meses).toFixed(2)}</span>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        {buscandoProdutos ? (
+                          <p>Buscando produtos...</p>
+                        ) : searchProduto && searchProduto.trim().length >= 2 ? (
+                          <p>Nenhum produto encontrado para "{searchProduto}"</p>
+                        ) : filteredProdutos.length === 0 ? (
+                          <p>Nenhum produto disponível para este tipo de operação</p>
+                        ) : null}
+                      </div>
+                    )}
+                  </Card>
                 </div>
+
+                {/* Dialog para adicionar produto */}
+                <DialogAdicionarProduto
+                  open={dialogAdicionarProdutoOpen}
+                  onOpenChange={setDialogAdicionarProdutoOpen}
+                  produto={produtoSelecionado}
+                  tipoOperacao={formData.tipo_operacao}
+                  onConfirm={handleConfirmarAdicionarProduto}
+                />
               </TabsContent>
 
               <TabsContent value="condicoes" className="space-y-4">
@@ -1815,77 +1977,91 @@ export default function PropostaFormDialog({
               </TabsContent>
 
               <TabsContent value="totais" className="space-y-4">
-                <Card className="p-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg">Subtotal de Itens:</span>
-                      <span className="text-lg font-semibold">
-                        R$ {totalItens.toFixed(2)}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center gap-4">
-                      <Label>Desconto Total (R$):</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.desconto_total}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            desconto_total: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-40"
-                      />
-                    </div>
-
-                    <div className="flex justify-between items-center gap-4">
-                      <Label>Outras Despesas (R$):</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.despesas_adicionais}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            despesas_adicionais: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-40"
-                      />
-                    </div>
-
-                    {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.acrescimo_percentual > 0 && (
-                      <div className="flex justify-between items-center text-sm text-muted-foreground">
-                        <span>Acréscimo ({formData.condicoes_comerciais.acrescimo_percentual}%):</span>
-                        <span>
-                          R$ {((totalItens - formData.desconto_total + formData.despesas_adicionais) * formData.condicoes_comerciais.acrescimo_percentual / 100).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="border-t pt-4 mt-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-2xl font-bold">Total Geral:</span>
-                        <span className="text-2xl font-bold text-primary">
-                          R$ {totalGeral.toFixed(2)}
-                        </span>
-                      </div>
-                      
-                      {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.parcelas > 1 && (
-                        <div className="flex justify-between items-center mt-2 pt-2 border-t">
-                          <span className="text-lg font-semibold">
-                            Valor da Parcela ({formData.condicoes_comerciais.parcelas}x):
-                          </span>
-                          <span className="text-lg font-semibold text-success">
-                            R$ {calcularValorParcela().toFixed(2)}
-                          </span>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="md:col-span-2 space-y-4">
+                    <Card className="p-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center gap-4">
+                          <Label>Desconto Total (R$):</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.desconto_total}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                desconto_total: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-40"
+                          />
                         </div>
-                      )}
-                    </div>
+
+                        <div className="flex justify-between items-center gap-4">
+                          <Label>Frete (R$):</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={0}
+                            onChange={(e) => {
+                              // TODO: Adicionar campo de frete no formData
+                            }}
+                            className="w-40"
+                            placeholder="0.00"
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center gap-4">
+                          <Label>Outras Despesas (R$):</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.despesas_adicionais}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                despesas_adicionais: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-40"
+                          />
+                        </div>
+
+                        {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.acrescimo_percentual > 0 && (
+                          <div className="flex justify-between items-center text-sm text-muted-foreground">
+                            <span>Acréscimo ({formData.condicoes_comerciais.acrescimo_percentual}%):</span>
+                            <span>
+                              R$ {((totalItens - formData.desconto_total + formData.despesas_adicionais) * formData.condicoes_comerciais.acrescimo_percentual / 100).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+
+                        {formData.condicoes_comerciais.tipo === "parcelado" && formData.condicoes_comerciais.parcelas > 1 && (
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t">
+                            <span className="text-lg font-semibold">
+                              Valor da Parcela ({formData.condicoes_comerciais.parcelas}x):
+                            </span>
+                            <span className="text-lg font-semibold text-success">
+                              R$ {calcularValorParcela().toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
                   </div>
-                </Card>
+
+                  <div>
+                    <ResumoFinanceiroPanel
+                      totalItens={items.length}
+                      somaQuantidades={items.reduce((sum, item) => sum + item.quantidade, 0)}
+                      descontoTotal={formData.desconto_total}
+                      subtotal={totalItens}
+                      frete={0}
+                      outrasDespesas={formData.despesas_adicionais}
+                      totalGeral={totalGeral}
+                    />
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="roi" className="space-y-4">
@@ -1915,6 +2091,36 @@ export default function PropostaFormDialog({
             </Button>
           </div>
         </form>
+
+        {/* Dialogs de seleção de cotações */}
+        <SelecionarCotacoesDialog
+          open={selecionarCotacoesDialogOpen}
+          onOpenChange={setSelecionarCotacoesDialogOpen}
+          onCotacoesSelecionadas={handleCotacoesSelecionadas}
+          clienteId={formData.cliente_id}
+          tipoOperacao={formData.tipo_operacao}
+        />
+
+        {itensCotacoesDialogOpen && cotacoesSelecionadas.length > 0 && (
+          <Dialog open={itensCotacoesDialogOpen} onOpenChange={setItensCotacoesDialogOpen}>
+            <DialogContent className="max-w-6xl max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle>Produtos das Cotações Selecionadas</DialogTitle>
+                <DialogDescription>
+                  Selecione os itens que deseja importar para a proposta
+                </DialogDescription>
+              </DialogHeader>
+              <ItensCotacoesSelecionadas
+                cotacoes={cotacoesSelecionadas}
+                onImportarItens={handleImportarItensCotacoes}
+                onCancelar={() => {
+                  setItensCotacoesDialogOpen(false);
+                  setCotacoesSelecionadas([]);
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );

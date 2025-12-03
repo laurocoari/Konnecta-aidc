@@ -36,6 +36,109 @@ interface ProposalData {
   }>;
 }
 
+function generateHTMLFromTemplate(proposal: any, empresa: any, somaQuantidades: number, subtotal: number): string {
+  // Processar template com variáveis dinâmicas
+  let html = proposal.modelo.layout_html || '';
+  
+  // Substituir variáveis básicas
+  html = html.replace(/\{\{empresa\.nome\}\}/g, empresa.nome);
+  html = html.replace(/\{\{empresa\.cnpj\}\}/g, empresa.cnpj);
+  html = html.replace(/\{\{empresa\.endereco\}\}/g, empresa.endereco);
+  html = html.replace(/\{\{empresa\.telefone\}\}/g, empresa.telefone);
+  html = html.replace(/\{\{empresa\.email\}\}/g, empresa.email);
+  
+  html = html.replace(/\{\{cliente\.nome\}\}/g, proposal.cliente.nome);
+  html = html.replace(/\{\{cliente\.cnpj\}\}/g, proposal.cliente.cnpj || '');
+  html = html.replace(/\{\{cliente\.endereco\}\}/g, proposal.cliente.endereco || '');
+  html = html.replace(/\{\{cliente\.cidade\}\}/g, proposal.cliente.cidade || '');
+  html = html.replace(/\{\{cliente\.estado\}\}/g, proposal.cliente.estado || '');
+  
+  html = html.replace(/\{\{proposta\.numero\}\}/g, proposal.codigo);
+  html = html.replace(/\{\{proposta\.versao\}\}/g, String(proposal.versao));
+  html = html.replace(/\{\{proposta\.data_emissao\}\}/g, new Date(proposal.data_proposta).toLocaleDateString('pt-BR'));
+  html = html.replace(/\{\{proposta\.validade\}\}/g, new Date(proposal.validade).toLocaleDateString('pt-BR'));
+  
+  if (proposal.responsavel) {
+    html = html.replace(/\{\{responsavel\.nome\}\}/g, proposal.responsavel.full_name || '');
+    html = html.replace(/\{\{responsavel\.email\}\}/g, proposal.responsavel.email || '');
+  }
+  
+  // Processar tabela de itens
+  const itemsTable = generateItemsTableHTML(proposal.items);
+  html = html.replace(/\{\{itens\.tabela\}\}/g, itemsTable);
+  
+  // Processar totais
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+  
+  html = html.replace(/\{\{totais\.total_itens\}\}/g, String(proposal.items.length));
+  html = html.replace(/\{\{totais\.soma_quantidades\}\}/g, String(somaQuantidades));
+  html = html.replace(/\{\{totais\.desconto_total\}\}/g, formatCurrency(proposal.desconto_total || 0));
+  html = html.replace(/\{\{totais\.subtotal\}\}/g, formatCurrency(subtotal));
+  html = html.replace(/\{\{totais\.frete\}\}/g, formatCurrency(0));
+  html = html.replace(/\{\{totais\.outras_despesas\}\}/g, formatCurrency(proposal.despesas_adicionais || 0));
+  html = html.replace(/\{\{totais\.total_geral\}\}/g, formatCurrency(proposal.total_geral));
+  
+  // Adicionar CSS do modelo se existir
+  if (proposal.modelo.css_personalizado) {
+    html = html.replace('</head>', `<style>${proposal.modelo.css_personalizado}</style></head>`);
+  }
+  
+  return html;
+}
+
+function generateItemsTableHTML(items: any[]): string {
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+  
+  const rows = items.map((item: any) => {
+    const precoLista = item.preco_unitario / (1 - (item.desconto || 0) / 100);
+    return `
+      <tr>
+        <td>${escapeHtml(item.descricao)}</td>
+        <td>${escapeHtml(item.product?.codigo || item.codigo || '-')}</td>
+        <td>${escapeHtml(item.unidade || 'un')}</td>
+        <td class="text-right">${item.quantidade}</td>
+        <td class="text-right">${formatCurrency(precoLista)}</td>
+        <td class="text-right">${(item.desconto || 0).toFixed(2)}%</td>
+        <td class="text-right">${formatCurrency(item.preco_unitario)}</td>
+        <td class="text-right">${formatCurrency(item.total)}</td>
+      </tr>
+    `;
+  }).join('');
+  
+  return `
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Descrição</th>
+          <th>Código</th>
+          <th>Unidade</th>
+          <th class="text-right">Qtde</th>
+          <th class="text-right">Preço Lista</th>
+          <th class="text-right">Desconto %</th>
+          <th class="text-right">Preço Unitário</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function generateHTML(data: ProposalData): string {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -374,48 +477,76 @@ Deno.serve(async (req) => {
 
     console.log('Generating PDF for proposal:', proposalId);
 
-    // Buscar dados da proposta
+    // Buscar dados da proposta com produtos e modelo para obter código interno
     const { data: proposal, error: proposalError } = await supabase
       .from('proposals')
       .select(`
         *,
         cliente:clients(*),
-        items:proposal_items(*)
+        modelo:proposal_templates(*),
+        responsavel:profiles!proposals_responsavel_comercial_id_fkey(id, full_name, email),
+        items:proposal_items(
+          *,
+          product:products(id, codigo)
+        )
       `)
       .eq('id', proposalId)
       .single();
 
     if (proposalError) throw proposalError;
 
-    // Gerar HTML
-    const html = generateHTML({
-      codigo: proposal.codigo,
-      versao: proposal.versao,
-      data_proposta: proposal.data_proposta,
-      validade: proposal.validade,
-      introducao: proposal.introducao,
-      total_itens: proposal.total_itens,
-      desconto_total: proposal.desconto_total,
-      total_geral: proposal.total_geral,
-      despesas_adicionais: proposal.despesas_adicionais,
-      condicoes_comerciais: proposal.condicoes_comerciais,
-      cliente: {
-        nome: proposal.cliente.nome,
-        cnpj: proposal.cliente.cnpj,
-        endereco: proposal.cliente.endereco,
-        cidade: proposal.cliente.cidade,
-        estado: proposal.cliente.estado,
-      },
-      items: proposal.items.map((item: any) => ({
-        descricao: item.descricao,
-        codigo: item.codigo,
-        unidade: item.unidade,
-        quantidade: item.quantidade,
-        preco_unitario: item.preco_unitario,
-        desconto: item.desconto,
-        total: item.total,
-      })),
-    });
+    // Preparar dados da empresa (do modelo ou padrão)
+    const empresa = proposal.modelo ? {
+      nome: proposal.modelo.empresa_nome || 'Konnecta Consultoria',
+      cnpj: proposal.modelo.empresa_cnpj || '05.601.700/0001-55',
+      endereco: proposal.modelo.empresa_endereco || 'Rua Rio Ebro, Nº7, QD12',
+      telefone: proposal.modelo.empresa_telefone || '(92) 3242-1311',
+      email: proposal.modelo.empresa_email || '',
+      logo_url: proposal.modelo.empresa_logo_url || '',
+    } : {
+      nome: 'Konnecta Consultoria',
+      cnpj: '05.601.700/0001-55',
+      endereco: 'Rua Rio Ebro, Nº7, QD12',
+      telefone: '(92) 3242-1311',
+      email: '',
+      logo_url: '',
+    };
+
+    // Calcular totais
+    const somaQuantidades = proposal.items.reduce((sum: number, item: any) => sum + item.quantidade, 0);
+    const subtotal = proposal.total_itens;
+
+    // Gerar HTML usando template do modelo se disponível, senão usar template padrão
+    const html = proposal.modelo && proposal.modelo.layout_html
+      ? generateHTMLFromTemplate(proposal, empresa, somaQuantidades, subtotal)
+      : generateHTML({
+          codigo: proposal.codigo,
+          versao: proposal.versao,
+          data_proposta: proposal.data_proposta,
+          validade: proposal.validade,
+          introducao: proposal.introducao,
+          total_itens: proposal.total_itens,
+          desconto_total: proposal.desconto_total,
+          total_geral: proposal.total_geral,
+          despesas_adicionais: proposal.despesas_adicionais,
+          condicoes_comerciais: proposal.condicoes_comerciais,
+          cliente: {
+            nome: proposal.cliente.nome,
+            cnpj: proposal.cliente.cnpj,
+            endereco: proposal.cliente.endereco,
+            cidade: proposal.cliente.cidade,
+            estado: proposal.cliente.estado,
+          },
+          items: proposal.items.map((item: any) => ({
+            descricao: item.descricao,
+            codigo: item.product?.codigo || item.codigo || '-',
+            unidade: item.unidade,
+            quantidade: item.quantidade,
+            preco_unitario: item.preco_unitario,
+            desconto: item.desconto,
+            total: item.total,
+          })),
+        });
 
     // Gerar token se não existir
     let token = proposal.token_publico;

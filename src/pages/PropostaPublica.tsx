@@ -41,13 +41,16 @@ export default function PropostaPublica() {
     }
 
     try {
-      // Buscar proposta pelo token (acesso público)
+      // Buscar proposta pelo token (acesso público) com código interno do produto
       const { data, error } = await supabase
         .from("proposals")
         .select(`
           *,
           cliente:clients(*),
-          items:proposal_items(*)
+          items:proposal_items(
+            *,
+            product:products(id, codigo)
+          )
         `)
         .eq("token_publico", token)
         .single();
@@ -205,7 +208,7 @@ export default function PropostaPublica() {
                   {proposal.items.map((item: any, index: number) => (
                     <tr key={index} className="border-b">
                       <td className="p-2">{item.descricao}</td>
-                      <td className="p-2">{item.codigo || '-'}</td>
+                      <td className="p-2">{item.product?.codigo || item.codigo || '-'}</td>
                       <td className="p-2 text-center">{item.unidade}</td>
                       <td className="p-2 text-center">{item.quantidade}</td>
                       <td className="p-2 text-right">{formatCurrency(item.preco_unitario)}</td>

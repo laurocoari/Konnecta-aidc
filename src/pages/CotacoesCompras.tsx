@@ -30,10 +30,21 @@ import {
   XCircle,
   Clock,
   Brain,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CotacaoEditDialog } from "@/components/Cotacoes/CotacaoEditDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ImportacaoInteligenteDialog } from "@/components/Cotacoes/ImportacaoInteligenteDialog";
 import { RevisaoCotacaoDialog } from "@/components/Cotacoes/RevisaoCotacaoDialog";
 import { findBestProductMatch } from "@/lib/productMatching";
@@ -53,6 +64,8 @@ export default function CotacoesCompras() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [revisaoDialogOpen, setRevisaoDialogOpen] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [cotacaoToDelete, setCotacaoToDelete] = useState<any>(null);
 
   useEffect(() => {
     loadCotações();
@@ -72,6 +85,7 @@ export default function CotacoesCompras() {
         .select(`
           *,
           supplier:suppliers(id, nome, cnpj),
+          cliente_final:clients(id, nome, cidade, estado),
           itens:cotacoes_compras_itens(count)
         `)
         .order("data_cotacao", { ascending: false });
@@ -137,6 +151,21 @@ export default function CotacoesCompras() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
+  const getTipoCotacaoBadge = (tipo: string) => {
+    const tipoConfig: Record<string, { label: string; className: string }> = {
+      COMPRA_DIRETA: { label: "Compra Direta", className: "bg-blue-500 hover:bg-blue-600 text-white" },
+      VENDA_AGENCIAVEL: { label: "Venda Agenciável", className: "bg-green-500 hover:bg-green-600 text-white" },
+      LOCACAO_AGENCIAVEL: { label: "Locação Agenciável", className: "bg-purple-500 hover:bg-purple-600 text-white" },
+    };
+
+    if (!tipo) {
+      return <Badge variant="secondary" className="bg-gray-500 text-white">Não definido</Badge>;
+    }
+
+    const config = tipoConfig[tipo] || { label: tipo, className: "bg-gray-500 text-white" };
+    return <Badge className={config.className}>{config.label}</Badge>;
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -151,6 +180,35 @@ export default function CotacoesCompras() {
   const handleEdit = (cotacao: any) => {
     setSelectedCotacao(cotacao);
     setDialogOpen(true);
+  };
+
+  const handleDelete = (cotacao: any) => {
+    setCotacaoToDelete(cotacao);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!cotacaoToDelete) return;
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from("cotacoes_compras")
+        .delete()
+        .eq("id", cotacaoToDelete.id);
+
+      if (error) throw error;
+
+      toast.success(`Cotação ${cotacaoToDelete.numero_cotacao} excluída com sucesso!`);
+      setDeleteDialogOpen(false);
+      setCotacaoToDelete(null);
+      loadCotações();
+    } catch (error: any) {
+      console.error("Error deleting cotacao:", error);
+      toast.error(error.message || "Erro ao excluir cotação");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -228,7 +286,12 @@ export default function CotacoesCompras() {
             <TableHeader>
               <TableRow>
                 <TableHead>Número</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Fornecedor</TableHead>
+                <TableHead>Cliente Final</TableHead>
+                <TableHead>Cidade</TableHead>
+                <TableHead>UF</TableHead>
+                <TableHead>Nº Proposta</TableHead>
                 <TableHead>Moeda</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-center">Itens</TableHead>
@@ -247,10 +310,27 @@ export default function CotacoesCompras() {
                     </div>
                   </TableCell>
                   <TableCell>
+                    {getTipoCotacaoBadge(cotacao.tipo_cotacao)}
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
                       <span>{cotacao.supplier?.nome || "N/A"}</span>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {cotacao.cliente_final?.nome || cotacao.nome_cliente_final || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {cotacao.cliente_final?.cidade || cotacao.cidade_cliente_final || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {cotacao.cliente_final?.estado || cotacao.estado_cliente_final || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-mono text-sm">
+                      {cotacao.proposta_numero || "—"}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">{cotacao.moeda || "BRL"}</Badge>
@@ -277,13 +357,23 @@ export default function CotacoesCompras() {
                   </TableCell>
                   <TableCell>{getStatusBadge(cotacao.status)}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(cotacao)}
-                    >
-                      Ver Itens / Editar
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(cotacao)}
+                      >
+                        Ver Itens / Editar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(cotacao)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -323,6 +413,34 @@ export default function CotacoesCompras() {
           }}
         />
       )}
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a cotação <strong>{cotacaoToDelete?.numero_cotacao}</strong>?
+              <br />
+              <br />
+              Esta ação irá excluir:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>A cotação e todos os seus {cotacaoToDelete?.quantidade_itens || 0} item(ns)</li>
+                <li>Esta ação não pode ser desfeita</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir Cotação
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

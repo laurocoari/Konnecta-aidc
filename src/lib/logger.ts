@@ -80,48 +80,38 @@ class Logger {
       error: '❌',
     }[entry.level];
 
-    if (this.isBrowser) {
-      // No navegador, usar formatação com CSS
-      const style = this.getBrowserStyle(level);
-      const prefix = `%c${emoji} [${timestamp}] [${category}]`;
-      
-      switch (level) {
-        case 'debug':
-          console.debug(prefix, style, message, data || '');
-          break;
-        case 'info':
-          console.info(prefix, style, message, data || '');
-          break;
-        case 'warn':
-          console.warn(prefix, style, message, data || '');
-          break;
-        case 'error':
-          console.error(prefix, style, message, data || '');
+    // Formatar mensagem para terminal (sempre aparece no terminal do Vite)
+    const formatted = this.formatLog(entry);
+    const dataStr = data ? (typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data)) : '';
+    const logMessage = `${formatted} ${message}${dataStr ? '\n' + dataStr : ''}`;
+    
+    // Log no terminal (sempre - Vite captura console.log/error/warn/info do navegador)
+    // Usar console.log para garantir que apareça no terminal do Vite em tempo real
+    switch (level) {
+      case 'debug':
+        console.log(logMessage);
+        if (this.isBrowser) console.debug(`%c${emoji} [${timestamp}] [${category}]`, this.getBrowserStyle(level), message, data || '');
+        break;
+      case 'info':
+        console.log(logMessage);
+        if (this.isBrowser) console.info(`%c${emoji} [${timestamp}] [${category}]`, this.getBrowserStyle(level), message, data || '');
+        break;
+      case 'warn':
+        console.warn(logMessage);
+        if (this.isBrowser) console.warn(`%c${emoji} [${timestamp}] [${category}]`, this.getBrowserStyle(level), message, data || '');
+        break;
+      case 'error':
+        console.error(logMessage);
+        if (data && data.stack) {
+          console.error('Stack:', data.stack);
+        }
+        if (this.isBrowser) {
+          console.error(`%c${emoji} [${timestamp}] [${category}]`, this.getBrowserStyle(level), message, data || '');
           if (data && data.stack) {
             console.error('%cStack:', 'color: #ef4444; font-weight: bold;', data.stack);
           }
-          break;
-      }
-    } else {
-      // No terminal, usar formatação ANSI
-      const formatted = this.formatLog(entry);
-      switch (level) {
-        case 'debug':
-          console.debug(formatted, data || '');
-          break;
-        case 'info':
-          console.info(formatted, data || '');
-          break;
-        case 'warn':
-          console.warn(formatted, data || '');
-          break;
-        case 'error':
-          console.error(formatted, data || '');
-          if (data) {
-            console.error('Stack:', data.stack || '');
-          }
-          break;
-      }
+        }
+        break;
     }
   }
 

@@ -124,9 +124,13 @@ export function PurchaseOrderFormDialog({
         .eq("codigo_principal", true)
         .maybeSingle();
 
-      // Se erro 404 ou tabela não existe, retornar null silenciosamente
+      // Se erro 404, PGRST116 ou PGRST205 (tabela não existe), retornar null silenciosamente
       if (error) {
-        if (error.code === "PGRST116" || error.status === 404) {
+        if (
+          error.code === "PGRST116" ||
+          error.code === "PGRST205" ||
+          error.status === 404
+        ) {
           return null;
         }
         // Outros erros: logar apenas em desenvolvimento
@@ -137,8 +141,12 @@ export function PurchaseOrderFormDialog({
       }
       return data?.codigo_fornecedor || null;
     } catch (error: any) {
-      // Não logar erros esperados (404, tabela não existe)
-      if (error?.code !== "PGRST116" && error?.status !== 404) {
+      // Não logar erros esperados (404, PGRST116, PGRST205 - tabela não existe)
+      if (
+        error?.code !== "PGRST116" &&
+        error?.code !== "PGRST205" &&
+        error?.status !== 404
+      ) {
         if (import.meta.env.DEV) {
           console.warn("Erro ao carregar código de fornecedor:", error);
         }

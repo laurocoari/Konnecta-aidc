@@ -23,6 +23,73 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   },
 });
 
+// Cache para armazenar tabelas que não existem (evita queries desnecessárias)
+const nonExistentTables = new Set<string>();
+
+// Função auxiliar para verificar se uma tabela não existe
+export function isTableNonExistent(tableName: string): boolean {
+  return nonExistentTables.has(tableName);
+}
+
+// Função para marcar uma tabela como não existente
+export function markTableAsNonExistent(tableName: string): void {
+  nonExistentTables.add(tableName);
+}
+
+// Interceptar fetch para evitar requisições 404 desnecessárias
+if (typeof window !== 'undefined') {
+  const originalFetch = window.fetch;
+  const SUPPRESS_404_TABLES = ['product_supplier_codes'];
+  
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Extrair URL da requisição
+    let url = '';
+    if (typeof input === 'string') {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.toString();
+    } else if (input instanceof Request) {
+      url = input.url;
+    }
+    
+    // Verificar se é uma requisição do Supabase para uma tabela que sabemos que não existe
+    const isSupabaseRequest = url.includes('supabase.co/rest/v1/');
+    const isSuppressedTable = SUPPRESS_404_TABLES.some(table => 
+      url.includes(`/${table}`) && nonExistentTables.has(table)
+    );
+    
+    // Se sabemos que a tabela não existe, retornar uma resposta 404 fake sem fazer a requisição
+    if (isSupabaseRequest && isSuppressedTable) {
+      return new Response(
+        JSON.stringify({ 
+          message: 'The result contains 0 rows',
+          code: 'PGRST116',
+          details: 'Table does not exist',
+          hint: null
+        }),
+        {
+          status: 404,
+          statusText: 'Not Found',
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+    
+    // Fazer a requisição normal
+    const response = await originalFetch(input, init);
+    
+    // Se receber 404 de uma tabela que pode não existir, marcar como não existente
+    if (isSupabaseRequest && response.status === 404) {
+      const tableName = SUPPRESS_404_TABLES.find(table => url.includes(`/${table}`));
+      if (tableName) {
+        markTableAsNonExistent(tableName);
+      }
+    }
+    
+    return response;
+  };
+}
+
 // Interceptar requisições para logging
 if (import.meta.env.DEV) {
   // Log de inicialização

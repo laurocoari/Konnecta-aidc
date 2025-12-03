@@ -1,9 +1,10 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Share2, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Download, Share2, CheckCircle2, FileText, Printer } from "lucide-react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { generateProposalPDF } from "@/lib/proposalPdfGenerator";
 
 interface PropostaPreviewDialogProps {
   open: boolean;
@@ -21,9 +22,11 @@ export function PropostaPreviewDialog({
   versao,
 }: PropostaPreviewDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
   const [htmlContent, setHtmlContent] = useState<string>("");
   const [linkPublico, setLinkPublico] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const handleGeneratePDF = async () => {
     setLoading(true);
@@ -52,7 +55,38 @@ export function PropostaPreviewDialog({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
+    if (!htmlContent) {
+      toast.error("Gere o PDF primeiro");
+      return;
+    }
+
+    setGeneratingPDF(true);
+    try {
+      // Criar elemento temporário para renderizar HTML
+      const tempDiv = document.createElement("div");
+      tempDiv.id = "temp-proposal-pdf";
+      tempDiv.innerHTML = htmlContent;
+      tempDiv.style.position = "absolute";
+      tempDiv.style.left = "-9999px";
+      tempDiv.style.width = "210mm";
+      document.body.appendChild(tempDiv);
+
+      try {
+        await generateProposalPDF("temp-proposal-pdf", `proposta-${codigo}-v${versao}`);
+        toast.success("PDF gerado e baixado com sucesso!");
+      } finally {
+        document.body.removeChild(tempDiv);
+      }
+    } catch (error: any) {
+      console.error("Erro ao gerar PDF:", error);
+      toast.error("Erro ao gerar PDF: " + error.message);
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  const handleDownloadHTML = () => {
     if (!htmlContent) return;
     
     const blob = new Blob([htmlContent], { type: 'text/html' });
@@ -68,6 +102,22 @@ export function PropostaPreviewDialog({
     toast.success("Download iniciado!");
   };
 
+  const handlePrint = () => {
+    if (!htmlContent) {
+      toast.error("Gere o PDF primeiro");
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -80,11 +130,11 @@ export function PropostaPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4 flex-wrap">
           <Button
             onClick={handleGeneratePDF}
             disabled={loading}
-            className="flex-1"
+            className="flex-1 min-w-[150px]"
           >
             {loading ? (
               <>
@@ -92,7 +142,10 @@ export function PropostaPreviewDialog({
                 Gerando...
               </>
             ) : (
-              "Gerar PDF"
+              <>
+                <FileText className="mr-2 h-4 w-4" />
+                Gerar Preview
+              </>
             )}
           </Button>
 
@@ -101,9 +154,33 @@ export function PropostaPreviewDialog({
               <Button
                 onClick={handleDownloadPDF}
                 variant="outline"
+                disabled={generatingPDF}
+              >
+                {generatingPDF ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Gerando PDF...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Baixar PDF
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleDownloadHTML}
+                variant="outline"
               >
                 <Download className="mr-2 h-4 w-4" />
                 Baixar HTML
+              </Button>
+              <Button
+                onClick={handlePrint}
+                variant="outline"
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimir
               </Button>
               <Button
                 onClick={handleCopyLink}

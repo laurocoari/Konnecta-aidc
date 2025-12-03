@@ -18,15 +18,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit, ShoppingCart } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit, ShoppingCart, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { logger } from "@/lib/logger";
 import PropostaFormDialog from "@/components/Propostas/PropostaFormDialog";
 import NovaVersaoDialog from "@/components/Propostas/NovaVersaoDialog";
 import HistoricoVersoesDialog from "@/components/Propostas/HistoricoVersoesDialog";
 import { PropostaPreviewDialog } from "@/components/Propostas/PropostaPreviewDialog";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
+import { DeletePropostaDialog } from "@/components/Propostas/DeletePropostaDialog";
+import { BulkDeletePropostasDialog } from "@/components/Propostas/BulkDeletePropostasDialog";
 import { useNavigate } from "react-router-dom";
 
 const statusColors = {
@@ -77,6 +81,10 @@ export default function Propostas() {
   const [salesOrdersMap, setSalesOrdersMap] = useState<Record<string, any>>({});
   const [salesOrderDialogOpen, setSalesOrderDialogOpen] = useState(false);
   const [selectedSalesOrder, setSelectedSalesOrder] = useState<any>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [propostaToDelete, setPropostaToDelete] = useState<any>(null);
+  const [selectedPropostas, setSelectedPropostas] = useState<Set<string>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     loadPropostas();
@@ -225,6 +233,224 @@ export default function Propostas() {
     setPreviewDialogOpen(true);
   };
 
+  const handleDeleteClick = (proposta: any) => {
+    logger.ui(`Clicou em deletar proposta: ${proposta.codigo} (ID: ${proposta.id})`);
+    setPropostaToDelete(proposta);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!propostaToDelete) {
+      logger.warn("DELETE", "Tentativa de deletar proposta sem proposta selecionada");
+      return;
+    }
+
+    logger.info("DELETE", `Iniciando exclusão da proposta ${propostaToDelete.codigo} (ID: ${propostaToDelete.id})`);
+
+    try {
+      // Verificar se há contratos vinculados (NO ACTION constraint)
+      logger.db(`Verificando contratos vinculados à proposta ${propostaToDelete.id}`);
+      const { data: contratos, error: contratosError } = await supabase
+        .from("contracts")
+        .select("id, numero")
+        .eq("proposta_id", propostaToDelete.id);
+
+      if (contratosError) {
+        logger.error("DELETE", "Erro ao verificar contratos", contratosError);
+        throw contratosError;
+      }
+
+      if (contratos && contratos.length > 0) {
+        logger.warn("DELETE", `Não é possível excluir: ${contratos.length} contrato(s) vinculado(s)`, contratos);
+        toast.error(
+          `Não é possível excluir a proposta. Existem ${contratos.length} contrato(s) vinculado(s) a esta proposta.`
+        );
+        return;
+      }
+
+      logger.db(`Deletando proposta ${propostaToDelete.id} e itens relacionados`);
+      
+      // Verificar permissões primeiro
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Usuário não autenticado");
+      }
+      logger.info("DELETE", `Usuário autenticado: ${user.email} (${user.id})`);
+
+      // Verificar se a proposta ainda existe antes de deletar
+      const { data: propostaExists, error: checkError } = await supabase
+        .from("proposals")
+        .select("id")
+        .eq("id", propostaToDelete.id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        logger.error("DELETE", "Erro ao verificar proposta", checkError);
+        throw checkError;
+      }
+
+      if (!propostaExists) {
+        logger.warn("DELETE", "Proposta não encontrada ou já foi deletada");
+        toast.error("A proposta não foi encontrada ou já foi excluída.");
+        await loadPropostas();
+        setPropostaToDelete(null);
+        return;
+      }
+
+      // Deletar a proposta (proposal_items e roi_simulations serão deletados em CASCADE)
+      // rental_receipts e sales_orders terão proposta_id setado para NULL automaticamente
+      const { error: propostaError } = await supabase
+        .from("proposals")
+        .delete()
+        .eq("id", propostaToDelete.id);
+
+      if (propostaError) {
+        logger.error("DELETE", "Erro ao deletar proposta", {
+          error: propostaError,
+          code: propostaError.code,
+          message: propostaError.message,
+          details: propostaError.details,
+          hint: propostaError.hint,
+        });
+        throw propostaError;
+      }
+
+      // Verificar se foi deletado com sucesso (sem .single() para evitar erro 406)
+      const { data: propostaAindaExiste, error: verifyError } = await supabase
+        .from("proposals")
+        .select("id")
+        .eq("id", propostaToDelete.id)
+        .maybeSingle();
+
+      if (!propostaAindaExiste) {
+        logger.info("DELETE", `✅ Proposta ${propostaToDelete.codigo} excluída com sucesso`);
+        toast.success("Proposta excluída com sucesso");
+        await loadPropostas();
+        setPropostaToDelete(null);
+      } else {
+        logger.warn("DELETE", `⚠️ A proposta ainda existe após tentativa de exclusão. Verifique permissões RLS.`);
+        toast.error("Não foi possível excluir a proposta. Verifique suas permissões ou se há dependências.");
+      }
+    } catch (error: any) {
+      logger.error("DELETE", "Erro ao excluir proposta", error);
+      toast.error("Erro ao excluir proposta: " + error.message);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPropostas.size === 0) {
+      logger.warn("DELETE", "Tentativa de deletar sem propostas selecionadas");
+      return;
+    }
+
+    const propostaIds = Array.from(selectedPropostas);
+    logger.info("DELETE", `Iniciando exclusão em massa de ${propostaIds.length} proposta(s)`, propostaIds);
+
+    try {
+      // Verificar se há contratos vinculados
+      logger.db(`Verificando contratos vinculados às propostas selecionadas`);
+      const { data: contratos, error: contratosError } = await supabase
+        .from("contracts")
+        .select("id, numero, proposta_id")
+        .in("proposta_id", propostaIds);
+
+      if (contratosError) {
+        logger.error("DELETE", "Erro ao verificar contratos", contratosError);
+        throw contratosError;
+      }
+
+      if (contratos && contratos.length > 0) {
+        const propostasComContratos = new Set(contratos.map(c => c.proposta_id));
+        const propostasSemContratos = propostaIds.filter(id => !propostasComContratos.has(id));
+        
+        logger.warn("DELETE", `${contratos.length} contrato(s) encontrado(s)`, {
+          contratos,
+          propostasComContratos: Array.from(propostasComContratos),
+          propostasSemContratos,
+        });
+
+        if (propostasSemContratos.length === 0) {
+          toast.error(
+            `Não é possível excluir as propostas selecionadas. Todas têm contratos vinculados.`
+          );
+          return;
+        }
+
+        // Perguntar se deseja excluir apenas as sem contratos
+        const confirmar = window.confirm(
+          `${propostasComContratos.size} proposta(s) têm contratos vinculados e não podem ser excluídas.\n\n` +
+          `Deseja excluir apenas as ${propostasSemContratos.length} proposta(s) sem contratos?`
+        );
+
+        if (!confirmar) {
+          return;
+        }
+
+        // Deletar apenas as sem contratos
+        const { error: propostaError } = await supabase
+          .from("proposals")
+          .delete()
+          .in("id", propostasSemContratos);
+
+        if (propostaError) {
+          logger.error("DELETE", "Erro ao deletar propostas", propostaError);
+          throw propostaError;
+        }
+
+        // Verificar se foram deletadas
+        const { data: propostasAindaExistem } = await supabase
+          .from("proposals")
+          .select("id")
+          .in("id", propostasSemContratos);
+
+        const deletadas = propostasSemContratos.length - (propostasAindaExistem?.length || 0);
+        
+        if (deletadas > 0) {
+          logger.info("DELETE", `✅ ${deletadas} proposta(s) excluída(s) com sucesso`);
+          toast.success(`${deletadas} proposta(s) excluída(s) com sucesso`);
+          await loadPropostas();
+          setSelectedPropostas(new Set());
+        } else {
+          logger.warn("DELETE", `⚠️ Nenhuma proposta foi deletada. Verifique permissões RLS.`);
+          toast.error("Não foi possível excluir as propostas. Verifique suas permissões.");
+        }
+      } else {
+        // Nenhum contrato vinculado, pode deletar todas
+        logger.db(`Deletando ${propostaIds.length} proposta(s) e itens relacionados`);
+        const { error: propostaError } = await supabase
+          .from("proposals")
+          .delete()
+          .in("id", propostaIds);
+
+        if (propostaError) {
+          logger.error("DELETE", "Erro ao deletar propostas", propostaError);
+          throw propostaError;
+        }
+
+        // Verificar se foram deletadas
+        const { data: propostasAindaExistem } = await supabase
+          .from("proposals")
+          .select("id")
+          .in("id", propostaIds);
+
+        const deletadas = propostaIds.length - (propostasAindaExistem?.length || 0);
+        
+        if (deletadas > 0) {
+          logger.info("DELETE", `✅ ${deletadas} proposta(s) excluída(s) com sucesso`);
+          toast.success(`${deletadas} proposta(s) excluída(s) com sucesso`);
+          await loadPropostas();
+          setSelectedPropostas(new Set());
+        } else {
+          logger.warn("DELETE", `⚠️ Nenhuma proposta foi deletada. Verifique permissões RLS.`);
+          toast.error("Não foi possível excluir as propostas. Verifique suas permissões.");
+        }
+      }
+    } catch (error: any) {
+      logger.error("DELETE", "Erro ao excluir propostas em massa", error);
+      toast.error("Erro ao excluir propostas: " + error.message);
+    }
+  };
+
   const handleFormSuccess = async (salesOrderCreated?: any) => {
     const propostaId = selectedProposta?.id;
     await loadPropostas();
@@ -308,7 +534,7 @@ export default function Propostas() {
       </div>
 
       <Card className="glass-strong p-6">
-        <div className="flex gap-4 mb-6">
+        <div className="flex gap-4 mb-6 items-center">
           <Input
             placeholder="Buscar por número ou cliente..."
             value={searchTerm}
@@ -340,6 +566,28 @@ export default function Propostas() {
               <SelectItem value="locacao_agenciada">Locação Agenciada</SelectItem>
             </SelectContent>
           </Select>
+          {selectedPropostas.size > 0 && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-sm text-muted-foreground">
+                {selectedPropostas.size} proposta(s) selecionada(s)
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Deletar Selecionadas
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedPropostas(new Set())}
+              >
+                Limpar Seleção
+              </Button>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -352,6 +600,18 @@ export default function Propostas() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={selectedPropostas.size > 0 && selectedPropostas.size === filteredPropostas.length}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedPropostas(new Set(filteredPropostas.map(p => p.id)));
+                      } else {
+                        setSelectedPropostas(new Set());
+                      }
+                    }}
+                  />
+                </TableHead>
                 <TableHead>Número</TableHead>
                 <TableHead>Versão</TableHead>
                 <TableHead>Tipo</TableHead>
@@ -369,6 +629,20 @@ export default function Propostas() {
             <TableBody>
               {filteredPropostas.map((proposta) => (
                 <TableRow key={proposta.id}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedPropostas.has(proposta.id)}
+                      onCheckedChange={(checked) => {
+                        const newSelected = new Set(selectedPropostas);
+                        if (checked) {
+                          newSelected.add(proposta.id);
+                        } else {
+                          newSelected.delete(proposta.id);
+                        }
+                        setSelectedPropostas(newSelected);
+                      }}
+                    />
+                  </TableCell>
                   <TableCell className="font-mono font-medium">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -533,6 +807,15 @@ export default function Propostas() {
                           )}
                         </>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(proposta)}
+                        title="Excluir Proposta"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -581,6 +864,34 @@ export default function Propostas() {
           }}
         />
       )}
+
+      <DeletePropostaDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          logger.ui(`Delete dialog ${open ? 'aberto' : 'fechado'}`);
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setPropostaToDelete(null);
+          }
+        }}
+        propostaCodigo={propostaToDelete?.codigo || ""}
+        onConfirm={handleDeleteConfirm}
+      />
+
+      <BulkDeletePropostasDialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setBulkDeleteDialogOpen(open);
+          if (!open) {
+            setSelectedPropostas(new Set());
+          }
+        }}
+        quantidade={selectedPropostas.size}
+        onConfirm={async () => {
+          await handleBulkDelete();
+          setBulkDeleteDialogOpen(false);
+        }}
+      />
     </div>
   );
 }

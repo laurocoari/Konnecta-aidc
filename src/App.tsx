@@ -32,6 +32,7 @@ import PedidosCompra from "./pages/PedidosCompra";
 import CentralSuporte from "./pages/CentralSuporte";
 import Tarefas from "./pages/Tarefas";
 import Estoque from "./pages/Estoque";
+import EstoquePublico from "./pages/EstoquePublico";
 import ContasReceber from "./pages/ContasReceber";
 import ContasPagar from "./pages/ContasPagar";
 import Comissoes from "./pages/Comissoes";
@@ -68,6 +69,7 @@ const App = () => {
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/parceiro" element={<AuthParceiro />} />
           <Route path="/proposta/:codigo" element={<PropostaPublica />} />
+          <Route path="/estoque/public/:id" element={<EstoquePublico />} />
           <Route
             path="/*"
             element={

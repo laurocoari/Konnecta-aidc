@@ -13,11 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ClienteFormDialog } from "@/components/Clientes/ClienteFormDialog";
 import { ExportButton } from "@/components/ExportButton";
-import { Search, Phone, Mail, Building2, Eye, Edit } from "lucide-react";
+import { Search, Phone, Mail, Building2, Eye, Edit, Paperclip } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { ExcelColumn } from "@/lib/excelExport";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 const statusColors = {
   ativo: "success",
@@ -127,6 +128,10 @@ export default function Clientes() {
               { header: "Contato Principal", key: "contato_principal", width: 25 },
               { header: "Email", key: "email", width: 30 },
               { header: "Telefone", key: "telefone", width: 15 },
+              { header: "E-mail Administrativo", key: "email_administrativo", width: 30 },
+              { header: "E-mail Financeiro", key: "email_financeiro", width: 30 },
+              { header: "Contato Financeiro", key: "contato_financeiro_nome", width: 25 },
+              { header: "Telefone Financeiro", key: "telefone_financeiro", width: 15 },
               { header: "Cidade", key: "cidade", width: 20 },
               { header: "Estado", key: "estado", width: 10 },
               { header: "CEP", key: "cep", width: 12 },
@@ -138,6 +143,10 @@ export default function Clientes() {
               contato_principal: c.contato_principal,
               email: c.email,
               telefone: c.telefone,
+              email_administrativo: c.email_administrativo || "",
+              email_financeiro: c.email_financeiro || "",
+              contato_financeiro_nome: c.contato_financeiro_nome || "",
+              telefone_financeiro: c.telefone_financeiro || "",
               cidade: c.cidade,
               estado: c.estado,
               cep: c.cep,
@@ -187,9 +196,26 @@ export default function Clientes() {
               {filteredClientes.map((cliente) => (
                 <TableRow key={cliente.id}>
                   <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
-                      {cliente.nome}
+                    <div className="flex items-center gap-3">
+                      {cliente.logomarca_url ? (
+                        <SafeImage
+                          src={cliente.logomarca_url}
+                          alt={cliente.nome}
+                          className="w-10 h-10 object-contain border rounded p-1"
+                          fallbackIcon={<Building2 className="h-5 w-5 text-muted-foreground" />}
+                        />
+                      ) : (
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <div className="flex-1">
+                        <div>{cliente.nome}</div>
+                        {cliente.anexos && Array.isArray(cliente.anexos) && cliente.anexos.length > 0 && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                            <Paperclip className="h-3 w-3" />
+                            {cliente.anexos.length} anexo(s)
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
@@ -202,6 +228,30 @@ export default function Clientes() {
                         <Mail className="h-3 w-3" />
                         {cliente.email}
                       </div>
+                      {cliente.email_administrativo && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Mail className="h-3 w-3" />
+                          Admin: {cliente.email_administrativo}
+                        </div>
+                      )}
+                      {cliente.email_financeiro && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Mail className="h-3 w-3" />
+                          Financeiro: {cliente.email_financeiro}
+                        </div>
+                      )}
+                      {cliente.contato_financeiro_nome && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          Contato Financeiro: {cliente.contato_financeiro_nome}
+                        </div>
+                      )}
+                      {cliente.telefone_financeiro && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          Tel. Financeiro: {cliente.telefone_financeiro}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Phone className="h-3 w-3" />
                         {cliente.telefone}
