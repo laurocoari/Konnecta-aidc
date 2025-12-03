@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { ARFormDialog } from "@/components/Financeiro/ARFormDialog";
 import { ARPaymentDialog } from "@/components/Financeiro/ARPaymentDialog";
+import { DeleteARDialog } from "@/components/Financeiro/DeleteARDialog";
 import { ExportButton } from "@/components/ExportButton";
 import { Edit, FileText, Trash2 } from "lucide-react";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
@@ -52,6 +53,9 @@ export default function ContasReceber() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteSingleDialogOpen, setDeleteSingleDialogOpen] = useState(false);
+  const [arToDelete, setArToDelete] = useState<any>(null);
 
   useEffect(() => {
     loadAccountsReceivable();
@@ -270,45 +274,70 @@ export default function ContasReceber() {
     );
   };
 
-  const handleSelectAll = () => {
-    if (selectedIds.length === filteredAR.length) {
-      setSelectedIds([]);
-    } else {
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
       setSelectedIds(filteredAR.map((ar) => ar.id));
+    } else {
+      setSelectedIds([]);
     }
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteClick = (ar: any) => {
+    setArToDelete(ar);
+    setDeleteSingleDialogOpen(true);
+  };
+
+  const handleDeleteSelectedClick = () => {
     if (selectedIds.length === 0) {
       toast.error("Selecione pelo menos uma conta a receber para deletar");
       return;
     }
+    setDeleteDialogOpen(true);
+  };
 
-    if (
-      !confirm(
-        `Tem certeza que deseja deletar ${selectedIds.length} conta(s) a receber? Esta ação não pode ser desfeita.`
-      )
-    ) {
+  const handleDeleteReceivables = async (ids: string[]) => {
+    if (ids.length === 0) {
+      logger.warn("DELETE", "Tentativa de deletar sem IDs selecionados");
       return;
     }
 
     try {
       setIsDeleting(true);
+      logger.info("DELETE", `Iniciando exclusão de ${ids.length} conta(s) a receber`, ids);
+
       const { error } = await supabase
         .from("accounts_receivable")
         .delete()
-        .in("id", selectedIds);
+        .in("id", ids);
 
-      if (error) throw error;
+      if (error) {
+        logger.error("DELETE", "Erro ao deletar contas a receber", error);
+        throw error;
+      }
 
-      toast.success(`${selectedIds.length} conta(s) a receber deletada(s) com sucesso`);
+      logger.info("DELETE", `✅ ${ids.length} conta(s) a receber excluída(s) com sucesso`);
+      toast.success(`${ids.length} conta(s) a receber deletada(s) com sucesso`);
       setSelectedIds([]);
-      loadAccountsReceivable();
+      await loadAccountsReceivable();
     } catch (error: any) {
+      logger.error("DELETE", "Erro ao deletar contas a receber", error);
       console.error("Error deleting AR:", error);
-      toast.error("Erro ao deletar contas a receber: " + error.message);
+      toast.error("Erro ao deletar contas a receber: " + (error.message || "Erro desconhecido"));
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteSelected = () => {
+    handleDeleteReceivables(selectedIds);
+    setDeleteDialogOpen(false);
+  };
+
+  const handleConfirmDeleteSingle = () => {
+    if (arToDelete) {
+      handleDeleteReceivables([arToDelete.id]);
+      setDeleteSingleDialogOpen(false);
+      setArToDelete(null);
     }
   };
 
@@ -403,12 +432,12 @@ export default function ContasReceber() {
           {selectedIds.length > 0 && (
             <Button
               variant="destructive"
-              onClick={handleDeleteSelected}
+              onClick={handleDeleteSelectedClick}
               disabled={isDeleting}
               className="gap-2"
             >
               <Trash2 className="h-4 w-4" />
-              Deletar {selectedIds.length} selecionada(s)
+              Excluir Selecionados ({selectedIds.length})
             </Button>
           )}
           <ExportButton
@@ -521,7 +550,8 @@ export default function ContasReceber() {
                   <Checkbox
                     checked={
                       filteredAR.length > 0 &&
-                      selectedIds.length === filteredAR.length
+                      selectedIds.length === filteredAR.length &&
+                      filteredAR.length > 0
                     }
                     onCheckedChange={handleSelectAll}
                   />
@@ -548,10 +578,16 @@ export default function ContasReceber() {
                     key={ar.id}
                     className={isOverdue ? "bg-red-50 dark:bg-red-950/20" : ""}
                   >
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedIds.includes(ar.id)}
-                        onCheckedChange={() => handleToggleSelect(ar.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds((prev) => [...prev, ar.id]);
+                          } else {
+                            setSelectedIds((prev) => prev.filter((id) => id !== ar.id));
+                          }
+                        }}
                       />
                     </TableCell>
                     <TableCell>
@@ -651,6 +687,15 @@ export default function ContasReceber() {
                             Registrar Pagamento
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteClick(ar)}
+                          title="Excluir Conta a Receber"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -709,6 +754,38 @@ export default function ContasReceber() {
           loadAccountsReceivable();
           setSelectedAR(null);
         }}
+      />
+
+      {/* Modal de confirmação para exclusão em massa */}
+      <DeleteARDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setDeleteDialogOpen(open);
+          }
+        }}
+        isMultiple={true}
+        count={selectedIds.length}
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDeleteSelected}
+      />
+
+      {/* Modal de confirmação para exclusão individual */}
+      <DeleteARDialog
+        open={deleteSingleDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setDeleteSingleDialogOpen(open);
+            if (!open) {
+              setArToDelete(null);
+            }
+          }
+        }}
+        isMultiple={false}
+        clienteNome={arToDelete?.contact?.nome || arToDelete?.contact?.empresa}
+        valorTotal={arToDelete ? parseFloat(arToDelete.valor_total || 0) : undefined}
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDeleteSingle}
       />
     </div>
   );

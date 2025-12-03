@@ -695,6 +695,7 @@ export type Database = {
           ean: string | null
           especificacoes: Json | null
           estoque_atual: number | null
+          hs_codigo_china: string | null
           estoque_minimo: number | null
           fornecedores_vinculados: Json | null
           galeria: Json | null
@@ -738,6 +739,7 @@ export type Database = {
           ean?: string | null
           especificacoes?: Json | null
           estoque_atual?: number | null
+          hs_codigo_china?: string | null
           estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
@@ -781,6 +783,7 @@ export type Database = {
           ean?: string | null
           especificacoes?: Json | null
           estoque_atual?: number | null
+          hs_codigo_china?: string | null
           estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null

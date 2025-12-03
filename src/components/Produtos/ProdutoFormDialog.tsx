@@ -67,6 +67,7 @@ export function ProdutoFormDialog({
     localizacao: "",
     ncm: "",
     ean: "",
+    hs_codigo_china: "",
     cfop: "",
     cst: "",
     origem: "0",
@@ -135,6 +136,7 @@ export function ProdutoFormDialog({
         localizacao: product.localizacao || "",
         ncm: product.ncm || "",
         ean: product.ean || "",
+        hs_codigo_china: product.hs_codigo_china || "",
         cfop: product.cfop || "",
         cst: product.cst || "",
         origem: product.origem || "0",
@@ -179,6 +181,7 @@ export function ProdutoFormDialog({
         localizacao: product.localizacao || "",
         ncm: product.ncm || "",
         ean: product.ean || "",
+        hs_codigo_china: product.hs_codigo_china || "",
         cfop: product.cfop || "",
         cst: product.cst || "",
         origem: product.origem || "0",
@@ -223,6 +226,7 @@ export function ProdutoFormDialog({
         localizacao: "",
         ncm: "",
         ean: "",
+        hs_codigo_china: "",
         cfop: "",
         cst: "",
         origem: "0",
@@ -490,6 +494,7 @@ export function ProdutoFormDialog({
         localizacao: cleanString(formData.localizacao),
         observacoes_fiscais: cleanString(formData.observacoes_fiscais),
         imagem_principal: cleanString(formData.imagem_principal),
+        hs_codigo_china: cleanString(formData.hs_codigo_china),
         // Arrays - manter como estão ou null se vazio
         galeria: formData.galeria && formData.galeria.length > 0 ? formData.galeria : null,
         especificacoes: formData.especificacoes && formData.especificacoes.length > 0 ? formData.especificacoes : null,
@@ -992,6 +997,22 @@ export function ProdutoFormDialog({
                     onChange={(e) => handleChange("ean", e.target.value)}
                     placeholder="7891234567890"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="hs_codigo_china">HS Código China</Label>
+                  <Input
+                    id="hs_codigo_china"
+                    value={formData.hs_codigo_china}
+                    onChange={(e) => handleChange("hs_codigo_china", e.target.value)}
+                    placeholder="8471.30.12"
+                    maxLength={20}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Código HS (Harmonized System) do produto importado da China
+                  </p>
                 </div>
               </div>
 
