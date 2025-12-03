@@ -262,7 +262,8 @@ export function SalesOrderFormDialog({
       if (produto) {
         item.descricao = produto.nome;
         item.codigo_produto = produto.sku_interno || produto.codigo || "";
-        item.preco_unitario = produto.valor_venda || 0;
+        // Não preencher preço unitário automaticamente - permite adicionar produtos sem valor
+        // item.preco_unitario = produto.valor_venda || 0;
       }
     }
     

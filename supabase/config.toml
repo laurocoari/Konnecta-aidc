@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.interpretar-cotacao]
 verify_jwt = true
+
+[functions.generate-contract-pdf]
+verify_jwt = false

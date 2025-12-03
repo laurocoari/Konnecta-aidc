@@ -530,7 +530,7 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
       'image/png',
     ];
 
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 50 * 1024 * 1024; // 50MB
 
     // Validar arquivos
     const validFiles: File[] = [];
@@ -540,7 +540,7 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
         continue;
       }
       if (file.size > maxSize) {
-        toast.error(`Arquivo muito grande: ${file.name} (máximo 10MB)`);
+        toast.error(`Arquivo muito grande: ${file.name} (máximo 50MB)`);
         continue;
       }
       validFiles.push(file);
@@ -988,7 +988,7 @@ export function ClienteFormDialog({ cliente, onSuccess }: ClienteFormDialogProps
                   )}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Formatos: PDF, Excel, Word, Imagens (máx. 10MB por arquivo)
+                  Formatos: PDF, Excel, Word, Imagens (máx. 50MB por arquivo)
                 </p>
 
                 {/* Lista de anexos */}
