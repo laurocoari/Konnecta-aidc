@@ -32,9 +32,10 @@ import { toast } from "sonner";
 import { ARFormDialog } from "@/components/Financeiro/ARFormDialog";
 import { ARPaymentDialog } from "@/components/Financeiro/ARPaymentDialog";
 import { ExportButton } from "@/components/ExportButton";
-import { Edit, FileText } from "lucide-react";
+import { Edit, FileText, Trash2 } from "lucide-react";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
 import { RentalReceiptFromARDialog } from "@/components/Financeiro/RentalReceiptFromARDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function ContasReceber() {
   const [accountsReceivable, setAccountsReceivable] = useState<any[]>([]);
@@ -48,10 +49,19 @@ export default function ContasReceber() {
   const [selectedAR, setSelectedAR] = useState<any>(null);
   const [editingAR, setEditingAR] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadAccountsReceivable();
   }, [filterStatus]);
+
+  // Limpar seleção quando os dados filtrados mudarem
+  useEffect(() => {
+    setSelectedIds((prev) =>
+      prev.filter((id) => filteredAR.some((ar) => ar.id === id))
+    );
+  }, [filteredAR]);
 
   const loadAccountsReceivable = async () => {
     try {
@@ -247,6 +257,54 @@ export default function ContasReceber() {
     setReceiptDialogOpen(true);
   };
 
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredAR.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredAR.map((ar) => ar.id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) {
+      toast.error("Selecione pelo menos uma conta a receber para deletar");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Tem certeza que deseja deletar ${selectedIds.length} conta(s) a receber? Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      const { error } = await supabase
+        .from("accounts_receivable")
+        .delete()
+        .in("id", selectedIds);
+
+      if (error) throw error;
+
+      toast.success(`${selectedIds.length} conta(s) a receber deletada(s) com sucesso`);
+      setSelectedIds([]);
+      loadAccountsReceivable();
+    } catch (error: any) {
+      console.error("Error deleting AR:", error);
+      toast.error("Erro ao deletar contas a receber: " + error.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const isLocacao = (ar: any) => {
     const tipoOperacao = ar.pedido?.proposta?.tipo_operacao || ar.proposta?.tipo_operacao;
     return tipoOperacao?.includes("locacao");
@@ -347,6 +405,17 @@ export default function ContasReceber() {
           </p>
         </div>
         <div className="flex gap-2">
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Deletar {selectedIds.length} selecionada(s)
+            </Button>
+          )}
           <ExportButton
             filename="contas-a-receber"
             title="Relatório de Contas a Receber"
@@ -453,6 +522,15 @@ export default function ContasReceber() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      filteredAR.length > 0 &&
+                      selectedIds.length === filteredAR.length
+                    }
+                    onCheckedChange={handleSelectAll}
+                  />
+                </TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Pedido</TableHead>
                 <TableHead>Tipo de Negociação</TableHead>
@@ -475,6 +553,12 @@ export default function ContasReceber() {
                     key={ar.id}
                     className={isOverdue ? "bg-red-50 dark:bg-red-950/20" : ""}
                   >
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.includes(ar.id)}
+                        onCheckedChange={() => handleToggleSelect(ar.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div>
                         <div className="font-medium">

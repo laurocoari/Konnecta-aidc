@@ -115,12 +115,20 @@ function generateHTML(contract: any, modelo: any, cliente: any, items: any[]): s
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page {
+      size: A4 portrait;
+      margin: 20mm;
+    }
     body {
       font-family: Arial, sans-serif;
       font-size: 11pt;
       color: #000;
-      padding: 40px;
+      padding: 20mm;
       line-height: 1.6;
+      width: 210mm; /* Largura A4 retrato */
+      min-height: 297mm; /* Altura A4 retrato */
+      margin: 0 auto;
+      background: #ffffff;
     }
     .header { margin-bottom: 30px; }
     .content { margin: 20px 0; }
@@ -131,8 +139,15 @@ function generateHTML(contract: any, modelo: any, cliente: any, items: any[]): s
     tr:nth-child(even) { background: #f9fafb; }
     .text-right { text-align: right; }
     @media print {
-      body { padding: 20px; }
-      @page { margin: 20mm; }
+      body { 
+        padding: 0;
+        width: 100%;
+        min-height: 100%;
+      }
+      @page { 
+        size: A4 portrait;
+        margin: 25mm 20mm; /* 25mm topo/rodapé, 20mm laterais */
+      }
     }
   </style>
 </head>
@@ -155,17 +170,26 @@ function generateHTML(contract: any, modelo: any, cliente: any, items: any[]): s
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page {
+      size: A4 portrait;
+      margin: 25mm 20mm; /* 25mm topo/rodapé, 20mm laterais */
+    }
     body {
       font-family: Arial, sans-serif;
       font-size: 11pt;
       color: #000;
-      padding: 40px;
+      padding: 0;
       line-height: 1.6;
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: #ffffff;
     }
     .header {
       border-bottom: 3px solid #1e40af;
       padding-bottom: 20px;
       margin-bottom: 30px;
+      padding-top: 10px;
     }
     .company-name {
       font-size: 24pt;
@@ -230,8 +254,15 @@ function generateHTML(contract: any, modelo: any, cliente: any, items: any[]): s
       color: #666;
     }
     @media print {
-      body { padding: 20px; }
-      @page { margin: 20mm; }
+      body { 
+        padding: 0;
+        width: 100%;
+        min-height: 100%;
+      }
+      @page { 
+        size: A4 portrait;
+        margin: 25mm 20mm; /* 25mm topo/rodapé, 20mm laterais */
+      }
     }
   </style>
 </head>
@@ -304,11 +335,22 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Validar variáveis de ambiente
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias');
+      console.error('[generate-contract-pdf] Variáveis de ambiente não configuradas');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Configuração do servidor incompleta',
+          details: 'Variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias'
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -318,24 +360,44 @@ Deno.serve(async (req) => {
       },
     });
 
+    // Parsear body
     let body;
     try {
       body = await req.json();
+      console.log('[generate-contract-pdf] Body recebido:', JSON.stringify(body));
     } catch (e) {
-      console.error('Erro ao parsear body:', e);
-      throw new Error('Body inválido ou vazio');
+      console.error('[generate-contract-pdf] Erro ao parsear body:', e);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Body inválido ou vazio',
+          details: e instanceof Error ? e.message : String(e)
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    const { contractId } = body;
+    const { contractId } = body || {};
     
     if (!contractId) {
-      console.error('contractId não fornecido');
-      throw new Error('contractId é obrigatório');
+      console.error('[generate-contract-pdf] contractId não fornecido. Body completo:', JSON.stringify(body));
+      return new Response(
+        JSON.stringify({ 
+          error: 'contractId obrigatório',
+          details: 'O campo contractId não foi fornecido no corpo da requisição'
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    console.log('Generating PDF for contract:', contractId);
+    console.log('[generate-contract-pdf] Gerando PDF para contrato:', contractId);
 
-    // Buscar dados do contrato
+    // 1) Buscar contrato + modelo + cliente
     const { data: contract, error: contractError } = await supabase
       .from('contracts')
       .select(`
@@ -347,16 +409,47 @@ Deno.serve(async (req) => {
       .single();
 
     if (contractError) {
-      console.error('Erro ao buscar contrato:', contractError);
-      throw new Error(`Erro ao buscar contrato: ${contractError.message}`);
+      console.error('[generate-contract-pdf] Erro ao buscar contrato:', contractError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Erro ao buscar contrato',
+          details: contractError.message
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
     if (!contract) {
-      console.error('Contrato não encontrado:', contractId);
-      throw new Error('Contrato não encontrado');
+      console.error('[generate-contract-pdf] Contrato não encontrado:', contractId);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Contrato não encontrado'
+        }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    // Buscar itens do contrato
+    // Validar dados necessários
+    if (!contract.cliente) {
+      console.error('[generate-contract-pdf] Cliente não encontrado para o contrato:', contractId);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Cliente não encontrado para este contrato'
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // 2) Buscar itens do contrato
     const { data: items, error: itemsError } = await supabase
       .from('contract_items')
       .select('*')
@@ -364,22 +457,31 @@ Deno.serve(async (req) => {
       .order('created_at', { ascending: true });
 
     if (itemsError) {
-      console.warn('Erro ao carregar itens:', itemsError);
+      console.warn('[generate-contract-pdf] Erro ao carregar itens (continuando mesmo assim):', itemsError);
     }
 
-    // Validar dados necessários
-    if (!contract.cliente) {
-      console.error('Cliente não encontrado para o contrato:', contractId);
-      throw new Error('Cliente não encontrado para este contrato');
+    // 3) Montar HTML
+    let html;
+    try {
+      html = generateHTML(
+        contract,
+        contract.modelo || null,
+        contract.cliente,
+        items || []
+      );
+    } catch (htmlError) {
+      console.error('[generate-contract-pdf] Erro ao gerar HTML:', htmlError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Erro interno ao gerar PDF',
+          details: htmlError instanceof Error ? htmlError.message : String(htmlError)
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
-
-    // Gerar HTML
-    const html = generateHTML(
-      contract,
-      contract.modelo || null,
-      contract.cliente,
-      items || []
-    );
 
     // Gerar token se não existir
     let token = contract.token_publico;
@@ -390,46 +492,47 @@ Deno.serve(async (req) => {
     // Atualizar contrato com token e link público
     const linkPublico = `${supabaseUrl.replace('supabase.co', 'lovableproject.com')}/contrato-publico?token=${token}`;
     
-    await supabase
-      .from('contracts')
-      .update({
-        token_publico: token,
-        link_publico: linkPublico,
-        pdf_url: null, // Será atualizado quando o PDF for gerado no frontend
-      })
-      .eq('id', contractId);
+    try {
+      await supabase
+        .from('contracts')
+        .update({
+          token_publico: token,
+          link_publico: linkPublico,
+          pdf_url: null, // Será atualizado quando o PDF for gerado no frontend
+        })
+        .eq('id', contractId);
+    } catch (updateError) {
+      console.warn('[generate-contract-pdf] Erro ao atualizar contrato (continuando mesmo assim):', updateError);
+    }
 
+    // 4) Retornar HTML (o frontend gera o PDF)
     return new Response(
       JSON.stringify({
+        ok: true,
         success: true,
         html,
         token,
         linkPublico,
       }),
       {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
-  } catch (error) {
-    console.error('Error generating contract PDF:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    
-    // Log detalhado para debug
-    console.error('Error details:', {
-      message: errorMessage,
-      stack: errorStack,
-      error: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-    });
+  } catch (err) {
+    console.error('[generate-contract-pdf] Erro interno', err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorDetails = err instanceof Error ? err.stack : undefined;
     
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        details: process.env.NODE_ENV === 'development' ? errorStack : undefined,
+      JSON.stringify({
+        error: 'Erro interno ao gerar PDF',
+        details: errorMessage,
+        ...(errorDetails && { stack: errorDetails }),
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     );
   }

@@ -26,18 +26,20 @@ export async function generateContractPDF(
     height: element.scrollHeight,
   });
 
-  // Calcular dimensões do PDF (A4)
-  const pdfWidth = 210; // mm (A4 width)
-  const pdfHeight = 297; // mm (A4 height)
+  // Calcular dimensões do PDF (A4 Retrato)
+  const pdfWidth = 210; // mm (A4 width em retrato)
+  const pdfHeight = 297; // mm (A4 height em retrato)
   const imgWidth = canvas.width;
   const imgHeight = canvas.height;
+  
+  // Calcular ratio mantendo proporção e garantindo que caiba na página A4 retrato
   const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
   const imgScaledWidth = imgWidth * ratio;
   const imgScaledHeight = imgHeight * ratio;
 
-  // Criar PDF
+  // Criar PDF em formato A4 Retrato (forçar portrait)
   const pdf = new jsPDF({
-    orientation: imgHeight > imgWidth ? "portrait" : "landscape",
+    orientation: "portrait", // Forçar retrato
     unit: "mm",
     format: "a4",
   });

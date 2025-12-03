@@ -167,7 +167,7 @@ export function ContratoDetailDialog({
 
     setGeneratingPDF(true);
     try {
-      logger.info("CONTRACT", `Gerando PDF do contrato ${contract.numero}`);
+      logger.info("CONTRACT", "Iniciando geração de PDF", { contractId: contract.id });
 
       // Obter sessão do usuário para autenticação
       const {
@@ -175,66 +175,145 @@ export function ContratoDetailDialog({
       } = await supabase.auth.getSession();
 
       if (!session) {
-        throw new Error("Usuário não autenticado");
+        logger.error("CONTRACT", "Usuário não autenticado");
+        toast.error("Usuário não autenticado. Faça login novamente.");
+        return;
       }
 
-      // Chamar Edge Function para gerar HTML
-      const { data, error } = await supabase.functions.invoke('generate-contract-pdf', {
-        body: { contractId: contract.id },
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+      // Chamar Edge Function para gerar HTML usando fetch diretamente para melhor controle de erros
+      logger.info("CONTRACT", "Enviando requisição para Edge Function", { 
+        contractId: contract.id,
+        hasSession: !!session 
       });
-
-      if (error) {
-        logger.error("CONTRACT", "Erro na Edge Function", error);
-        // Tentar extrair mensagem de erro mais detalhada
-        const errorMessage = error.message || "Erro ao gerar PDF";
-        throw new Error(errorMessage);
-      }
-
-      if (!data) {
-        throw new Error("Resposta vazia da Edge Function");
-      }
-
-      if (data.error) {
-        logger.error("CONTRACT", "Erro retornado pela Edge Function", data.error);
-        throw new Error(data.error);
-      }
-
-      if (!data.html) {
-        throw new Error("HTML não foi gerado");
-      }
-
-      setHtmlContent(data.html);
-
-      // Criar elemento temporário para renderizar HTML
-      const tempDiv = document.createElement("div");
-      tempDiv.id = "temp-contract-pdf";
-      tempDiv.innerHTML = data.html;
-      tempDiv.style.position = "absolute";
-      tempDiv.style.left = "-9999px";
-      tempDiv.style.width = "210mm";
-      document.body.appendChild(tempDiv);
-
+      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      const functionUrl = `${supabaseUrl}/functions/v1/generate-contract-pdf`;
+      
       try {
-        // Importar função de geração de PDF
-        const { generateContractPDF } = await import("@/lib/contractPdfGenerator");
-        await generateContractPDF("temp-contract-pdf", `contrato-${contract.numero}`);
-        toast.success("PDF gerado e baixado com sucesso!");
-      } finally {
-        document.body.removeChild(tempDiv);
-      }
+        const fetchResponse = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': supabaseAnonKey,
+          },
+          body: JSON.stringify({ contractId: contract.id }),
+        });
 
-      // Atualizar link público se foi gerado
-      if (data.linkPublico) {
-        await loadContract();
-        onSuccess?.();
+        let responseData: any = null;
+        const responseText = await fetchResponse.text();
+        
+        try {
+          responseData = responseText ? JSON.parse(responseText) : null;
+        } catch (e) {
+          logger.warn("CONTRACT", "Erro ao parsear resposta como JSON", { text: responseText });
+        }
+
+        logger.info("CONTRACT", "Resposta recebida da Edge Function", { 
+          status: fetchResponse.status,
+          statusText: fetchResponse.statusText,
+          hasData: !!responseData,
+          dataKeys: responseData ? Object.keys(responseData) : [],
+        });
+
+        if (!fetchResponse.ok) {
+          // Erro HTTP (400, 500, etc.)
+          const errorMessage = responseData?.error || responseData?.details || `Erro ${fetchResponse.status}: ${fetchResponse.statusText}`;
+          
+          logger.error("CONTRACT", "Erro na Edge Function", {
+            status: fetchResponse.status,
+            statusText: fetchResponse.statusText,
+            responseData,
+            errorMessage,
+          });
+          
+          toast.error(errorMessage);
+          return;
+        }
+
+        if (!responseData) {
+          logger.error("CONTRACT", "Resposta vazia da Edge Function");
+          toast.error("Retorno inválido da função de PDF");
+          return;
+        }
+
+        // Verificar se há erro na resposta mesmo com status 200
+        if (responseData.error) {
+          logger.error("CONTRACT", "Erro retornado pela Edge Function", responseData.error);
+          const errorMessage = typeof responseData.error === 'string' 
+            ? responseData.error 
+            : responseData.error.message || responseData.details || 'Erro ao gerar PDF do contrato';
+          toast.error(errorMessage);
+          return;
+        }
+
+        const data = responseData;
+
+        // Se vier URL do PDF
+        if (data.fileUrl) {
+          window.open(data.fileUrl, '_blank');
+          toast.success("PDF gerado com sucesso!");
+          return;
+        }
+
+        // Se vier base64
+        if (data.base64) {
+          const link = document.createElement('a');
+          link.href = `data:application/pdf;base64,${data.base64}`;
+          link.download = `${contract.numero || 'contrato'}.pdf`;
+          link.click();
+          toast.success("PDF gerado com sucesso!");
+          return;
+        }
+
+        // Se vier HTML (comportamento atual)
+        if (data.html) {
+          setHtmlContent(data.html);
+
+          // Criar elemento temporário para renderizar HTML em formato A4 Retrato
+          const tempDiv = document.createElement("div");
+          tempDiv.id = "temp-contract-pdf";
+          tempDiv.innerHTML = data.html;
+          tempDiv.style.position = "absolute";
+          tempDiv.style.left = "-9999px";
+          tempDiv.style.width = "210mm"; // Largura A4 retrato (total)
+          tempDiv.style.minHeight = "297mm"; // Altura mínima A4 retrato (total)
+          tempDiv.style.backgroundColor = "#ffffff";
+          tempDiv.style.margin = "0";
+          tempDiv.style.padding = "0";
+          document.body.appendChild(tempDiv);
+
+          try {
+            // Importar função de geração de PDF
+            const { generateContractPDF } = await import("@/lib/contractPdfGenerator");
+            await generateContractPDF("temp-contract-pdf", `contrato-${contract.numero}`);
+            toast.success("PDF gerado e baixado com sucesso!");
+          } finally {
+            document.body.removeChild(tempDiv);
+          }
+
+          // Atualizar link público se foi gerado
+          if (data.linkPublico) {
+            await loadContract();
+            onSuccess?.();
+          }
+          return;
+        }
+
+        // Se não veio nenhum formato válido
+        logger.error("CONTRACT", "Resposta inválida da Edge Function", data);
+        toast.error("Retorno inválido da função de PDF");
+      } catch (fetchError: any) {
+        logger.error("CONTRACT", "Erro ao fazer requisição para Edge Function", fetchError);
+        const errorMessage = fetchError?.message || 'Erro inesperado ao gerar PDF do contrato';
+        toast.error(errorMessage);
       }
-    } catch (error: any) {
-      logger.error("CONTRACT", "Erro ao gerar PDF", error);
-      toast.error("Erro ao gerar PDF: " + error.message);
+    } catch (err: any) {
+      logger.error("CONTRACT", "Erro inesperado ao gerar PDF", err);
+      const errorMessage = err?.message || 'Erro inesperado ao gerar PDF do contrato';
+      toast.error(errorMessage);
     } finally {
       setGeneratingPDF(false);
     }
