@@ -1143,12 +1143,20 @@ export default function PropostaFormDialog({
       return;
     }
 
-    // Debounce para evitar muitas buscas
+    // Debounce para evitar muitas buscas (300ms conforme solicitado)
     const timeoutId = setTimeout(async () => {
       setBuscandoProdutos(true);
       try {
+        if (import.meta.env.DEV) {
+          console.log("🔍 Iniciando busca no Supabase para:", searchProduto);
+        }
+        
         // Buscar produtos no Supabase
         const resultados = await searchProductsInSupabase(searchProduto);
+        
+        if (import.meta.env.DEV) {
+          console.log("📦 Resultados da busca Supabase:", resultados.length);
+        }
         
         if (resultados.length > 0) {
           // Buscar dados completos dos produtos encontrados
@@ -1166,21 +1174,32 @@ export default function PropostaFormDialog({
             .in("id", ids)
             .eq("status", "ativo");
           
-          if (!error && produtosCompletos) {
+          if (error) {
+            console.error("Erro ao buscar produtos completos:", error);
+            logger.error("DB", "Erro ao buscar produtos completos no Supabase", error);
+            setProdutosBuscaSupabase([]);
+          } else if (produtosCompletos) {
+            if (import.meta.env.DEV) {
+              console.log("✅ Produtos completos carregados:", produtosCompletos.length);
+            }
             setProdutosBuscaSupabase(produtosCompletos);
           } else {
             setProdutosBuscaSupabase([]);
           }
         } else {
+          if (import.meta.env.DEV) {
+            console.log("⚠️ Nenhum resultado encontrado no Supabase para:", searchProduto);
+          }
           setProdutosBuscaSupabase([]);
         }
       } catch (error) {
+        console.error("Erro ao buscar produtos no Supabase:", error);
         logger.error("DB", "Erro ao buscar produtos no Supabase", error);
         setProdutosBuscaSupabase([]);
       } finally {
         setBuscandoProdutos(false);
       }
-    }, 500);
+    }, 300); // Debounce de 300ms conforme solicitado
 
     return () => clearTimeout(timeoutId);
   }, [searchProduto]);
@@ -1189,40 +1208,60 @@ export default function PropostaFormDialog({
   const todosProdutos = useMemo(() => {
     const produtosUnicos = new Map<string, any>();
     
-    // Sempre adicionar produtos locais primeiro (base completa)
+    // Se não há busca ou busca muito curta, usar apenas produtos locais
+    if (!searchProduto || searchProduto.trim().length < 2) {
+      produtos.forEach(p => produtosUnicos.set(p.id, p));
+      if (import.meta.env.DEV) {
+        console.log(`📦 Sem busca: usando ${produtos.length} produtos locais`);
+      }
+      return Array.from(produtosUnicos.values());
+    }
+    
+    // Quando há busca, combinar produtos locais com resultados da busca Supabase
+    // Primeiro adicionar produtos locais (base completa)
     produtos.forEach(p => produtosUnicos.set(p.id, p));
     
-    // Sempre adicionar produtos da busca Supabase (sobrescrevem se já existirem com dados mais atualizados)
+    // Depois adicionar produtos da busca Supabase (sobrescrevem se já existirem com dados mais atualizados)
     // Isso garante que produtos encontrados no Supabase sejam incluídos, mesmo que já existam localmente
     produtosBuscaSupabase.forEach(p => produtosUnicos.set(p.id, p));
     
+    if (import.meta.env.DEV) {
+      console.log(`📦 Com busca: ${produtos.length} locais + ${produtosBuscaSupabase.length} Supabase = ${produtosUnicos.size} únicos`);
+    }
+    
     return Array.from(produtosUnicos.values());
-  }, [produtos, produtosBuscaSupabase]);
+  }, [produtos, produtosBuscaSupabase, searchProduto]);
   
   const filteredProdutos = useMemo(() => {
-    if (todosProdutos.length === 0) return [];
+    if (todosProdutos.length === 0) {
+      if (import.meta.env.DEV) {
+        console.log("⚠️ Nenhum produto em todosProdutos");
+      }
+      return [];
+    }
     
-    return todosProdutos.filter(p => {
+    const termoBusca = searchProduto?.trim() || "";
+    const termoBuscaLower = termoBusca.toLowerCase();
+    const temBusca = termoBusca.length > 0;
+    
+    const filtrados = todosProdutos.filter(p => {
       // Se há busca, verificar se o produto corresponde
-      if (searchProduto && searchProduto.trim().length > 0) {
-        const termoBusca = searchProduto.toLowerCase().trim();
-        
-        // Busca básica em todos os campos
+      if (temBusca) {
+        // Busca básica em todos os campos (case-insensitive)
         const matchesSearch = 
-          p.nome?.toLowerCase().includes(termoBusca) ||
-          p.codigo?.toLowerCase().includes(termoBusca) ||
-          p.sku_interno?.toLowerCase().includes(termoBusca) ||
-          p.codigo_fabricante?.toLowerCase().includes(termoBusca) ||
-          p.descricao?.toLowerCase().includes(termoBusca);
+          (p.nome && p.nome.toLowerCase().includes(termoBuscaLower)) ||
+          (p.codigo && p.codigo.toLowerCase().includes(termoBuscaLower)) ||
+          (p.sku_interno && p.sku_interno.toLowerCase().includes(termoBuscaLower)) ||
+          (p.codigo_fabricante && p.codigo_fabricante.toLowerCase().includes(termoBuscaLower)) ||
+          (p.descricao && p.descricao.toLowerCase().includes(termoBuscaLower));
         
         // Se não encontrou com busca básica e o termo é um número, fazer busca parcial em códigos
         // Isso garante que "48" encontre "CT48", "RT40", etc.
-        if (!matchesSearch && /^\d+$/.test(termoBusca)) {
-          const numberPattern = termoBusca;
+        if (!matchesSearch && /^\d+$/.test(termoBuscaLower)) {
           const matchesNumber = 
-            p.codigo?.toLowerCase().includes(numberPattern) ||
-            p.codigo_fabricante?.toLowerCase().includes(numberPattern) ||
-            p.sku_interno?.toLowerCase().includes(numberPattern);
+            (p.codigo && p.codigo.toLowerCase().includes(termoBuscaLower)) ||
+            (p.codigo_fabricante && p.codigo_fabricante.toLowerCase().includes(termoBuscaLower)) ||
+            (p.sku_interno && p.sku_interno.toLowerCase().includes(termoBuscaLower));
           
           if (!matchesNumber) return false;
         } else if (!matchesSearch) {
@@ -1242,6 +1281,12 @@ export default function PropostaFormDialog({
       // Se não há tipo_operacao definido, mostrar todos os produtos
       return true;
     });
+    
+    if (import.meta.env.DEV && temBusca) {
+      console.log(`🔍 Filtro aplicado: ${todosProdutos.length} produtos -> ${filtrados.length} filtrados para "${termoBusca}"`);
+    }
+    
+    return filtrados;
   }, [todosProdutos, searchProduto, formData.tipo_operacao]);
 
   return (

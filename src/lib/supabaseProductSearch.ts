@@ -26,122 +26,103 @@ export async function searchProductsInSupabase(
     return [];
   }
 
-  const term = searchTerm.toLowerCase().trim();
+  const term = searchTerm.trim();
+  const termLower = term.toLowerCase();
   
-  // Extrair código do termo (ex: "ct48" de "coletores UROVO CT48")
-  const codeMatch = term.match(/([a-z]{1,3}[\d]{2,6}(?:[-][a-z0-9]+)?)/i);
-  const code = codeMatch ? codeMatch[1].toLowerCase() : null;
-  
-  // Extrair números simples do termo (ex: "48" de "48" ou "ct48")
-  const numberMatch = term.match(/(\d+)/);
-  const number = numberMatch ? numberMatch[1] : null;
-  
-  // Gerar termos de busca (termo completo + código se identificado + número se identificado)
-  const searchTerms = new Set([term]);
-  if (code && code !== term) {
-    searchTerms.add(code);
-    searchTerms.add(code.replace(/-/g, ''));
-    searchTerms.add(code.replace(/-/g, ' '));
-  }
-  // Se há um número simples, adicionar variações para busca parcial
-  if (number && number !== term) {
-    searchTerms.add(number);
+  // Log para debug
+  if (import.meta.env.DEV) {
+    console.log("🔍 Buscando produtos no Supabase:", term);
   }
   
   try {
-    // Busca usando LIKE em múltiplos campos
-    // Nota: Supabase não suporta OR direto, então fazemos múltiplas queries
-    const queries: any[] = [];
+    // Busca usando OR com múltiplas condições via RPC ou múltiplas queries
+    // Como Supabase não suporta OR direto, fazemos múltiplas queries e combinamos
+    const queries: Promise<any>[] = [];
     
-    // Para cada termo de busca, criar queries
-    for (const st of Array.from(searchTerms)) {
-      queries.push(
-        // Busca por nome
-        supabase
-          .from("products")
-          .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-          .ilike("nome", `%${st}%`)
-          .eq("status", "ativo")
-          .limit(50),
-        
-        // Busca por descrição
-        supabase
-          .from("products")
-          .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-          .ilike("descricao", `%${st}%`)
-          .eq("status", "ativo")
-          .limit(50),
-        
-        // Busca por código
-        supabase
-          .from("products")
-          .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-          .ilike("codigo", `%${st}%`)
-          .eq("status", "ativo")
-          .limit(50),
-        
-        // Busca por código fabricante (part number)
-        supabase
-          .from("products")
-          .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-          .ilike("codigo_fabricante", `%${st}%`)
-          .eq("status", "ativo")
-          .limit(50)
-      );
-      
-      // Se o termo é um número simples, fazer busca adicional por números em códigos
-      // Isso garante que "48" encontre "CT48", "RT40", etc.
-      if (/^\d+$/.test(st)) {
-        queries.push(
-          // Busca por número em código (ex: "48" em "CT48")
-          supabase
-            .from("products")
-            .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-            .ilike("codigo", `%${st}%`)
-            .eq("status", "ativo")
-            .limit(50),
-          
-          // Busca por número em código_fabricante
-          supabase
-            .from("products")
-            .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
-            .ilike("codigo_fabricante", `%${st}%`)
-            .eq("status", "ativo")
-            .limit(50)
-        );
-      }
-    }
-
+    // Busca por nome (case-insensitive)
+    queries.push(
+      supabase
+        .from("products")
+        .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
+        .ilike("nome", `%${term}%`)
+        .eq("status", "ativo")
+        .limit(100)
+    );
+    
+    // Busca por descrição (case-insensitive)
+    queries.push(
+      supabase
+        .from("products")
+        .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
+        .ilike("descricao", `%${term}%`)
+        .eq("status", "ativo")
+        .limit(100)
+    );
+    
+    // Busca por código (case-insensitive)
+    queries.push(
+      supabase
+        .from("products")
+        .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
+        .ilike("codigo", `%${term}%`)
+        .eq("status", "ativo")
+        .limit(100)
+    );
+    
+    // Busca por código fabricante (case-insensitive)
+    queries.push(
+      supabase
+        .from("products")
+        .select("id, nome, descricao, codigo, codigo_fabricante, ncm, categoria, brand_id")
+        .ilike("codigo_fabricante", `%${term}%`)
+        .eq("status", "ativo")
+        .limit(100)
+    );
+    
+    // Se o termo contém apenas números, também buscar em sku_interno se existir
+    // Nota: sku_interno pode não estar na query inicial, mas vamos tentar buscar por código que pode conter o número
+    
     const results = await Promise.all(queries);
     
     // Combinar resultados e remover duplicatas
     const allProducts = new Map<string, ProductSearchResult>();
+    let totalFound = 0;
     
-    results.forEach(({ data, error }) => {
+    results.forEach(({ data, error }, index) => {
       if (error) {
-        console.error("Erro na busca Supabase:", error);
+        console.error(`Erro na busca Supabase (query ${index}):`, error);
         return;
       }
       
-      if (data) {
+      if (data && Array.isArray(data)) {
+        totalFound += data.length;
         data.forEach((product: any) => {
-          if (!allProducts.has(product.id)) {
-            allProducts.set(product.id, {
-              id: product.id,
-              nome: product.nome,
-              descricao: product.descricao,
-              codigo: product.codigo,
-              codigo_fabricante: product.codigo_fabricante,
-              ncm: product.ncm,
-              categoria: product.categoria,
-              brand_id: product.brand_id,
-            });
+          if (product && product.id) {
+            if (!allProducts.has(product.id)) {
+              allProducts.set(product.id, {
+                id: product.id,
+                nome: product.nome,
+                descricao: product.descricao,
+                codigo: product.codigo,
+                codigo_fabricante: product.codigo_fabricante,
+                ncm: product.ncm,
+                categoria: product.categoria,
+                brand_id: product.brand_id,
+              });
+            }
           }
         });
       }
     });
     
-    return Array.from(allProducts.values());
+    const finalResults = Array.from(allProducts.values());
+    
+    // Log para debug
+    if (import.meta.env.DEV) {
+      console.log(`✅ Busca concluída: ${totalFound} resultados brutos, ${finalResults.length} únicos para "${term}"`);
+    }
+    
+    return finalResults;
   } catch (error) {
     console.error("Erro ao buscar produtos no Supabase:", error);
     return [];
