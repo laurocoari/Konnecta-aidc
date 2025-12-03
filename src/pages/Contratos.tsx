@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, FileText, Calendar, DollarSign, Download, Eye, AlertCircle, Loader2 } from "lucide-react";
+import { Plus, Search, FileText, Calendar, Download, Eye, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -12,6 +12,7 @@ import { calculateProximoVencimento } from "@/lib/contractStatus";
 import { ContratoFormDialog } from "@/components/Contratos/ContratoFormDialog";
 import { ContratoDetailDialog } from "@/components/Contratos/ContratoDetailDialog";
 import { logger } from "@/lib/logger";
+import { formatarMoeda } from "@/lib/currencyConverter";
 
 const statusColors = {
   ativo: "success",
@@ -121,7 +122,7 @@ export default function Contratos() {
         <Card className="glass-strong p-4">
           <p className="text-sm text-muted-foreground">Valor Total Mensal</p>
           <p className="mt-1 text-3xl font-bold text-success">
-            R$ {(stats.valorMensal / 1000).toFixed(0)}k
+            {formatarMoeda(stats.valorMensal, "BRL")}
           </p>
         </Card>
         <Card className="glass-strong p-4">
@@ -194,21 +195,14 @@ export default function Contratos() {
                           
                           <div>
                             <p className="text-xs text-muted-foreground">Valor</p>
-                            <div className="mt-1 flex items-center gap-1 font-semibold text-success">
-                              <DollarSign className="h-4 w-4" />
+                            <div className="mt-1 font-semibold text-success">
                               {contrato.valor_mensal ? (
                                 <>
-                                  R$ {contrato.valor_mensal.toLocaleString("pt-BR", {
-                                    minimumFractionDigits: 2,
-                                  })}
+                                  {formatarMoeda(contrato.valor_mensal, "BRL")}
                                   /mês
                                 </>
                               ) : (
-                                <>
-                                  R$ {contrato.valor_total.toLocaleString("pt-BR", {
-                                    minimumFractionDigits: 2,
-                                  })}
-                                </>
+                                formatarMoeda(contrato.valor_total, "BRL")
                               )}
                             </div>
                           </div>

@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit, ShoppingCart, Trash2 } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Eye, Download, History, GitBranch, Edit, ShoppingCart, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDial
 import { DeletePropostaDialog } from "@/components/Propostas/DeletePropostaDialog";
 import { BulkDeletePropostasDialog } from "@/components/Propostas/BulkDeletePropostasDialog";
 import { useNavigate } from "react-router-dom";
+import { formatarMoeda } from "@/lib/currencyConverter";
 
 const statusColors = {
   rascunho: "secondary",
@@ -63,6 +64,72 @@ const tipoOperacaoLabels = {
   locacao_agenciada: "Locação Agenciada",
 };
 
+// Tipo para proposta agrupada com versões
+type PropostaComVersoes = {
+  id: string;
+  codigo: string;
+  versao: number;
+  tipo_operacao: string;
+  cliente: any;
+  total_geral: number;
+  custo_total: number | null;
+  lucro_total: number | null;
+  margem_percentual_total: number | null;
+  data_proposta: string;
+  validade: string;
+  status: string;
+  pdf_url: string | null;
+  vendedor: any;
+  modelo: any;
+  oportunidade: any;
+  created_at?: string;
+  versoesAnteriores: any[];
+};
+
+// Função para agrupar propostas por código
+function agruparPropostasPorCodigo(propostas: any[]): PropostaComVersoes[] {
+  const grupos = new Map<string, any[]>();
+  
+  // Agrupar por código
+  propostas.forEach(proposta => {
+    const codigo = proposta.codigo;
+    if (!grupos.has(codigo)) {
+      grupos.set(codigo, []);
+    }
+    grupos.get(codigo)!.push(proposta);
+  });
+  
+  // Para cada grupo, determinar versão mais recente e separar anteriores
+  const resultado: PropostaComVersoes[] = [];
+  
+  grupos.forEach((versoes, codigo) => {
+    // Ordenar por versão (maior primeiro) e depois por created_at (mais recente primeiro)
+    versoes.sort((a, b) => {
+      if (b.versao !== a.versao) {
+        return b.versao - a.versao;
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    
+    const versaoAtual = versoes[0];
+    const versoesAnteriores = versoes.slice(1);
+    
+    resultado.push({
+      ...versaoAtual,
+      versoesAnteriores: versoesAnteriores.sort((a, b) => b.versao - a.versao), // Ordenar do mais recente para o mais antigo
+    });
+  });
+  
+  // Ordenar resultado por data de criação da versão mais recente (mais recente primeiro)
+  resultado.sort((a, b) => {
+    const dataA = new Date(a.created_at || a.data_proposta).getTime();
+    const dataB = new Date(b.created_at || b.data_proposta).getTime();
+    return dataB - dataA;
+  });
+  
+  return resultado;
+}
+
 export default function Propostas() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState<any[]>([]);
@@ -85,6 +152,7 @@ export default function Propostas() {
   const [propostaToDelete, setPropostaToDelete] = useState<any>(null);
   const [selectedPropostas, setSelectedPropostas] = useState<Set<string>>(new Set());
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [expandedPropostas, setExpandedPropostas] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadPropostas();
@@ -479,15 +547,35 @@ export default function Propostas() {
       .reduce((sum, p) => sum + parseFloat(p.total_geral), 0),
   };
 
-  // Filtrar propostas
-  const filteredPropostas = propostas.filter((proposta) => {
-    const matchStatus = filterStatus === "all" || proposta.status === filterStatus;
-    const matchTipo = filterTipo === "all" || proposta.tipo_operacao === filterTipo;
+  // Agrupar propostas por código
+  const propostasAgrupadas = agruparPropostasPorCodigo(propostas);
+  
+  // Filtrar propostas agrupadas
+  // Se qualquer versão do grupo bater no filtro, mantém o grupo
+  const filteredPropostas = propostasAgrupadas.filter((propostaGrupo) => {
+    const todasVersoes = [propostaGrupo, ...propostaGrupo.versoesAnteriores];
+    
+    // Verificar se alguma versão bate nos filtros
+    const matchStatus = filterStatus === "all" || todasVersoes.some(v => v.status === filterStatus);
+    const matchTipo = filterTipo === "all" || todasVersoes.some(v => v.tipo_operacao === filterTipo);
     const matchSearch =
-      proposta.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      proposta.cliente?.nome.toLowerCase().includes(searchTerm.toLowerCase());
+      propostaGrupo.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      todasVersoes.some(v => v.cliente?.nome?.toLowerCase().includes(searchTerm.toLowerCase()));
+    
     return matchStatus && matchTipo && matchSearch;
   });
+  
+  const toggleExpanded = (codigo: string) => {
+    setExpandedPropostas(prev => {
+      const next = new Set(prev);
+      if (next.has(codigo)) {
+        next.delete(codigo);
+      } else {
+        next.add(codigo);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -627,31 +715,65 @@ export default function Propostas() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPropostas.map((proposta) => (
-                <TableRow key={proposta.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedPropostas.has(proposta.id)}
-                      onCheckedChange={(checked) => {
-                        const newSelected = new Set(selectedPropostas);
-                        if (checked) {
-                          newSelected.add(proposta.id);
-                        } else {
-                          newSelected.delete(proposta.id);
-                        }
-                        setSelectedPropostas(newSelected);
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono font-medium">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      {proposta.codigo}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">v{proposta.versao}</Badge>
-                  </TableCell>
+              {filteredPropostas.map((proposta) => {
+                const isExpanded = expandedPropostas.has(proposta.codigo);
+                const temVersoesAnteriores = proposta.versoesAnteriores.length > 0;
+                
+                return (
+                  <>
+                      <TableRow key={proposta.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedPropostas.has(proposta.id)}
+                            onCheckedChange={(checked) => {
+                              const newSelected = new Set(selectedPropostas);
+                              if (checked) {
+                                newSelected.add(proposta.id);
+                              } else {
+                                newSelected.delete(proposta.id);
+                              }
+                              setSelectedPropostas(newSelected);
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono font-medium">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            {proposta.codigo}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">v{proposta.versao}</Badge>
+                            {temVersoesAnteriores && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-6 px-2 text-xs ${
+                                  isExpanded
+                                    ? "bg-muted/50 text-muted-foreground hover:bg-muted"
+                                    : "bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20"
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpanded(proposta.codigo);
+                                }}
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <ChevronDown className="h-3 w-3 mr-1" />
+                                    Ocultar
+                                  </>
+                                ) : (
+                                  <>
+                                    <History className="h-3 w-3 mr-1" />
+                                    Ver versões ({proposta.versoesAnteriores.length})
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                   <TableCell>
                     <Badge
                       className={tipoOperacaoColors[proposta.tipo_operacao as keyof typeof tipoOperacaoColors] || ""}
@@ -671,11 +793,7 @@ export default function Propostas() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1 font-semibold text-success">
-                      <DollarSign className="h-4 w-4" />
-                      R${" "}
-                      {proposta.total_geral.toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                      })}
+                      {formatarMoeda(proposta.total_geral, "BRL")}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
@@ -819,7 +937,90 @@ export default function Propostas() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                
+                {/* Versões anteriores expandidas */}
+                {temVersoesAnteriores && isExpanded && (
+                  <TableRow>
+                    <TableCell colSpan={13} className="bg-muted/30 p-0">
+                      <div className="p-4">
+                        <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                          <History className="h-4 w-4" />
+                          Versões Anteriores ({proposta.versoesAnteriores.length})
+                        </h4>
+                        <div className="space-y-2">
+                          {proposta.versoesAnteriores.map((versaoAnterior) => (
+                            <div
+                              key={versaoAnterior.id}
+                              className="flex items-center gap-4 p-3 rounded-lg bg-background/50 border border-border/50"
+                            >
+                              <div className="flex items-center gap-2 min-w-[80px]">
+                                <Badge variant="outline">v{versaoAnterior.versao}</Badge>
+                              </div>
+                              <div className="flex-1 grid grid-cols-5 gap-4 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Status</span>
+                                  <div className="mt-1">
+                                    <Badge
+                                      variant={statusColors[versaoAnterior.status as keyof typeof statusColors]}
+                                    >
+                                      {statusLabels[versaoAnterior.status as keyof typeof statusLabels]}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Valor</span>
+                                  <div className="mt-1 font-semibold text-success">
+                                    {formatarMoeda(versaoAnterior.total_geral, "BRL")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Data</span>
+                                  <div className="mt-1 flex items-center gap-1 text-muted-foreground">
+                                    <Calendar className="h-3 w-3" />
+                                    {format(new Date(versaoAnterior.data_proposta), "dd/MM/yyyy")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Validade</span>
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {format(new Date(versaoAnterior.validade), "dd/MM/yyyy")}
+                                  </div>
+                                </div>
+                                <div className="flex items-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedProposalId(versaoAnterior.id);
+                                      setSelectedCodigo(versaoAnterior.codigo);
+                                      setSelectedVersao(versaoAnterior.versao);
+                                      setPreviewDialogOpen(true);
+                                    }}
+                                    title="Visualizar"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleHistorico(versaoAnterior.codigo)}
+                                    title="Histórico"
+                                  >
+                                    <History className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                  </>
+                );
+              })}
             </TableBody>
           </Table>
         )}

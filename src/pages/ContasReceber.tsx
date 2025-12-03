@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { ARFormDialog } from "@/components/Financeiro/ARFormDialog";
 import { ARPaymentDialog } from "@/components/Financeiro/ARPaymentDialog";
 import { ExportButton } from "@/components/ExportButton";
@@ -56,6 +57,20 @@ export default function ContasReceber() {
     loadAccountsReceivable();
   }, [filterStatus]);
 
+  const filteredAR = useMemo(() => {
+    return accountsReceivable.filter((ar) => {
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        return (
+          ar.contact?.nome?.toLowerCase().includes(term) ||
+          ar.contact?.empresa?.toLowerCase().includes(term) ||
+          ar.origem?.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
+  }, [accountsReceivable, searchTerm]);
+
   // Limpar seleção quando os dados filtrados mudarem
   useEffect(() => {
     setSelectedIds((prev) =>
@@ -66,6 +81,8 @@ export default function ContasReceber() {
   const loadAccountsReceivable = async () => {
     try {
       setLoading(true);
+      logger.db("Carregando contas a receber", { filterStatus });
+      
       let query = supabase
         .from("accounts_receivable")
         .select(`
@@ -81,7 +98,12 @@ export default function ContasReceber() {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        logger.error("AR", "Erro ao carregar contas a receber", error);
+        throw error;
+      }
+
+      logger.db(`Contas a receber carregadas: ${data?.length || 0}`);
 
       // Buscar pedidos relacionados para contas com origem "pedido_venda"
       const pedidoIds = (data || [])
@@ -190,47 +212,32 @@ export default function ContasReceber() {
         (ar) =>
           ar.status === "pendente" &&
           ar.data_vencimento < hoje &&
-          ar.valor_pago < ar.valor_total
+          parseFloat(ar.valor_pago || 0) < parseFloat(ar.valor_total || 0)
       );
 
       if (arsToUpdate.length > 0) {
-        for (const ar of arsToUpdate) {
-          await supabase
-            .from("accounts_receivable")
-            .update({ status: "atrasado" })
-            .eq("id", ar.id);
-        }
-        // Recarregar dados atualizados
-        const { data: updatedData } = await query;
-        const updatedWithRelations = (updatedData || []).map(ar => {
-          let pedido = null;
-          let proposta = null;
-          
-          if (ar.origem === "pedido_venda" && ar.referencia_id) {
-            pedido = pedidosMap[ar.referencia_id] || null;
-            // Se o pedido tem proposta relacionada, incluir nos dados do pedido
-            if (pedido && pedido.proposta_id) {
-              const propostaRelacionada = pedidoPropostasMap[pedido.proposta_id];
-              if (propostaRelacionada) {
-                pedido = { ...pedido, proposta: propostaRelacionada };
-              }
-            }
-          } else if (ar.origem === "proposta" && ar.referencia_id) {
-            proposta = propostasMap[ar.referencia_id] || null;
-            if (proposta) {
-              pedido = propostaPedidosMap[ar.referencia_id] || null;
-            }
+        // Atualizar status em lote
+        const arsToUpdateIds = arsToUpdate.map(ar => ar.id);
+        await supabase
+          .from("accounts_receivable")
+          .update({ status: "atrasado" })
+          .in("id", arsToUpdateIds);
+        
+        // Atualizar status localmente sem recarregar
+        const updatedData = dataWithRelations.map(ar => {
+          if (arsToUpdateIds.includes(ar.id)) {
+            return { ...ar, status: "atrasado" };
           }
-          
-          return { ...ar, pedido, proposta };
+          return ar;
         });
-        setAccountsReceivable(updatedWithRelations);
+        setAccountsReceivable(updatedData);
       } else {
         setAccountsReceivable(dataWithRelations);
       }
     } catch (error: any) {
+      logger.error("AR", "Erro ao carregar contas a receber", error);
       console.error("Error loading AR:", error);
-      toast.error("Erro ao carregar contas a receber");
+      toast.error("Erro ao carregar contas a receber: " + (error.message || "Erro desconhecido"));
     } finally {
       setLoading(false);
     }
@@ -372,18 +379,6 @@ export default function ContasReceber() {
     
     return tipos[tipoOperacao] || tipoOperacao;
   };
-
-  const filteredAR = accountsReceivable.filter((ar) => {
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      return (
-        ar.contact?.nome?.toLowerCase().includes(term) ||
-        ar.contact?.empresa?.toLowerCase().includes(term) ||
-        ar.origem?.toLowerCase().includes(term)
-      );
-    }
-    return true;
-  });
 
   const totalAR = filteredAR.reduce(
     (sum, ar) => sum + parseFloat(ar.valor_total || 0),

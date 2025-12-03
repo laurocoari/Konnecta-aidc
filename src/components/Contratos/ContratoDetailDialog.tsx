@@ -24,10 +24,10 @@ import { ptBR } from "date-fns/locale";
 import { ContractWithRelations } from "@/lib/contractService";
 import { calculateProximoVencimento } from "@/lib/contractStatus";
 import { logger } from "@/lib/logger";
+import { formatarMoeda } from "@/lib/currencyConverter";
 import {
   FileText,
   Calendar,
-  DollarSign,
   Building2,
   User,
   Mail,
@@ -436,26 +436,20 @@ export function ContratoDetailDialog({
                   </div>
                 )}
                 <div>
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <DollarSign className="h-3 w-3" />
+                  <p className="text-sm text-muted-foreground">
                     Valor Total
                   </p>
                   <p className="font-semibold text-success">
-                    R$ {contract.valor_total.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 2,
-                    })}
+                    {formatarMoeda(contract.valor_total, "BRL")}
                   </p>
                 </div>
                 {contract.valor_mensal && (
                   <div>
-                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                      <DollarSign className="h-3 w-3" />
+                    <p className="text-sm text-muted-foreground">
                       Valor Mensal
                     </p>
                     <p className="font-semibold text-success">
-                      R$ {contract.valor_mensal.toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                      })}
+                      {formatarMoeda(contract.valor_mensal, "BRL")}
                       /mês
                     </p>
                   </div>
@@ -514,9 +508,7 @@ export function ContratoDetailDialog({
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <span className="font-mono">{contract.proposta.codigo}</span>
                   <span className="text-sm text-muted-foreground">
-                    (R$ {contract.proposta.total_geral.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 2,
-                    })})
+                    ({formatarMoeda(contract.proposta.total_geral, "BRL")})
                   </span>
                 </div>
               </Card>
@@ -552,14 +544,10 @@ export function ContratoDetailDialog({
                         <TableCell>{item.descricao}</TableCell>
                         <TableCell className="text-right">{item.quantidade}</TableCell>
                         <TableCell className="text-right">
-                          R$ {item.valor_unitario.toLocaleString("pt-BR", {
-                            minimumFractionDigits: 2,
-                          })}
+                          {formatarMoeda(item.valor_unitario, "BRL")}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          R$ {item.valor_total.toLocaleString("pt-BR", {
-                            minimumFractionDigits: 2,
-                          })}
+                          {formatarMoeda(item.valor_total, "BRL")}
                         </TableCell>
                       </TableRow>
                     ))}

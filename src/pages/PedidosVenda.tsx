@@ -32,8 +32,10 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { SalesOrderFormDialog } from "@/components/Vendas/SalesOrderFormDialog";
 import { SalesOrderDetailDialog } from "@/components/Vendas/SalesOrderDetailDialog";
+import { DeleteOrderDialog } from "@/components/Vendas/DeleteOrderDialog";
 import { ExportButton } from "@/components/ExportButton";
 import { useNavigate } from "react-router-dom";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,6 +61,8 @@ export default function PedidosVenda() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [selectedPedidos, setSelectedPedidos] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteOrderDialogOpen, setDeleteOrderDialogOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<any>(null);
 
   useEffect(() => {
     loadSalesOrders();
@@ -110,6 +114,164 @@ export default function PedidosVenda() {
     setDetailDialogOpen(true);
   };
 
+  const handleDeleteClick = (order: any) => {
+    setOrderToDelete(order);
+    setDeleteOrderDialogOpen(true);
+  };
+
+  const handleDeleteOrder = async () => {
+    if (!orderToDelete) {
+      logger.warn("DELETE", "Tentativa de deletar pedido sem pedido selecionado");
+      toast.error("Nenhum pedido selecionado para exclusão");
+      return;
+    }
+
+    logger.info("DELETE", `Iniciando exclusão do pedido ${orderToDelete.numero_pedido || orderToDelete.id}`, {
+      orderId: orderToDelete.id,
+      orderNumber: orderToDelete.numero_pedido,
+    });
+
+    try {
+      // Verificar se há faturas vinculadas ao pedido
+      logger.db(`Verificando faturas vinculadas ao pedido ${orderToDelete.id}`);
+      const { data: faturas, error: faturasError } = await supabase
+        .from("sales_invoices")
+        .select("id, sales_order_id, numero_fatura")
+        .eq("sales_order_id", orderToDelete.id);
+
+      if (faturasError) {
+        logger.error("DELETE", "Erro ao verificar faturas", faturasError);
+        toast.error("Erro ao verificar faturas vinculadas: " + faturasError.message);
+        return;
+      }
+
+      logger.db(`Faturas encontradas: ${faturas?.length || 0}`, faturas);
+
+      if (faturas && faturas.length > 0) {
+        logger.warn("DELETE", `Pedido tem ${faturas.length} fatura(s) vinculada(s)`, faturas);
+        
+        // Perguntar se deseja deletar as faturas primeiro
+        const confirmarDeletarFaturas = window.confirm(
+          `Este pedido possui ${faturas.length} fatura(s) vinculada(s):\n\n` +
+          faturas.map(f => `- ${f.numero_fatura}`).join('\n') +
+          `\n\nDeseja excluir as faturas e depois o pedido?\n\n` +
+          `⚠️ ATENÇÃO: Esta ação também excluirá as contas a receber vinculadas às faturas.`
+        );
+
+        if (!confirmarDeletarFaturas) {
+          logger.info("DELETE", "Exclusão cancelada pelo usuário");
+          setOrderToDelete(null);
+          setDeleteOrderDialogOpen(false);
+          return;
+        }
+
+        // Deletar as faturas primeiro
+        logger.db(`Deletando ${faturas.length} fatura(s) antes de deletar o pedido`);
+        const faturaIds = faturas.map(f => f.id);
+        const { error: deleteFaturasError } = await supabase
+          .from("sales_invoices")
+          .delete()
+          .in("id", faturaIds);
+
+        if (deleteFaturasError) {
+          logger.error("DELETE", "Erro ao deletar faturas", deleteFaturasError);
+          toast.error("Erro ao deletar faturas: " + deleteFaturasError.message);
+          setOrderToDelete(null);
+          setDeleteOrderDialogOpen(false);
+          return;
+        }
+
+        logger.info("DELETE", `✅ ${faturas.length} fatura(s) deletada(s) com sucesso`);
+        toast.success(`${faturas.length} fatura(s) deletada(s). Deletando pedido...`);
+      }
+
+      // Verificar permissões antes de deletar
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        logger.error("DELETE", "Usuário não autenticado");
+        toast.error("Usuário não autenticado. Faça login novamente.");
+        return;
+      }
+      logger.info("DELETE", `Usuário autenticado: ${user.email} (${user.id})`);
+
+      // Verificar se o pedido ainda existe antes de deletar
+      const { data: pedidoExiste, error: checkError } = await supabase
+        .from("sales_orders")
+        .select("id, numero_pedido")
+        .eq("id", orderToDelete.id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        logger.error("DELETE", "Erro ao verificar pedido", checkError);
+        throw checkError;
+      }
+
+      if (!pedidoExiste) {
+        logger.warn("DELETE", "Pedido não encontrado ou já foi deletado");
+        toast.error("O pedido não foi encontrado ou já foi excluído.");
+        await loadSalesOrders();
+        setOrderToDelete(null);
+        setDeleteOrderDialogOpen(false);
+        return;
+      }
+
+      // Deletar o pedido (os itens serão deletados automaticamente por CASCADE)
+      logger.db(`Deletando pedido ${orderToDelete.id} e itens relacionados`);
+      const { error: deleteError } = await supabase
+        .from("sales_orders")
+        .delete()
+        .eq("id", orderToDelete.id);
+
+      if (deleteError) {
+        logger.error("DELETE", "Erro ao deletar pedido", {
+          error: deleteError,
+          code: deleteError.code,
+          message: deleteError.message,
+          details: deleteError.details,
+          hint: deleteError.hint,
+        });
+        throw deleteError;
+      }
+
+      // Verificar se foi deletado com sucesso
+      const { data: pedidoAindaExiste, error: verifyError } = await supabase
+        .from("sales_orders")
+        .select("id")
+        .eq("id", orderToDelete.id)
+        .maybeSingle();
+
+      if (verifyError && verifyError.code !== 'PGRST116') {
+        logger.warn("DELETE", "Erro ao verificar exclusão", verifyError);
+      }
+
+      if (!pedidoAindaExiste) {
+        logger.info("DELETE", `✅ Pedido ${orderToDelete.numero_pedido || orderToDelete.id} excluído com sucesso`);
+        toast.success("Pedido excluído com sucesso");
+        await loadSalesOrders();
+        setOrderToDelete(null);
+      } else {
+        logger.warn("DELETE", `⚠️ O pedido ainda existe após tentativa de exclusão. Verifique permissões RLS.`);
+        toast.error("Não foi possível excluir o pedido. Verifique suas permissões ou se há dependências.");
+      }
+    } catch (error: any) {
+      logger.error("DELETE", "Erro ao excluir pedido", error);
+      
+      // Mensagens de erro mais específicas
+      let errorMessage = "Erro ao excluir pedido";
+      if (error.code === '23503') {
+        errorMessage = "Não é possível excluir o pedido. Existem registros vinculados (faturas, itens, etc.).";
+      } else if (error.code === '42501') {
+        errorMessage = "Você não tem permissão para excluir este pedido.";
+      } else if (error.message) {
+        errorMessage = `Erro ao excluir pedido: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setDeleteOrderDialogOpen(false);
+    }
+  };
+
   const handleToggleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedPedidos(filteredOrders.map(order => order.id));
@@ -136,81 +298,208 @@ export default function PedidosVenda() {
 
   const confirmBulkDelete = async () => {
     if (selectedPedidos.length === 0) {
+      logger.warn("DELETE", "Tentativa de deletar sem pedidos selecionados");
       toast.error("Nenhum pedido selecionado");
       setDeleteDialogOpen(false);
       return;
     }
 
+    logger.info("DELETE", `Iniciando exclusão em massa de ${selectedPedidos.length} pedido(s)`, selectedPedidos);
+
     try {
       // Verificar se há faturas vinculadas aos pedidos
+      logger.db(`Verificando faturas vinculadas aos pedidos selecionados`);
       const { data: faturas, error: faturasError } = await supabase
         .from("sales_invoices")
         .select("id, sales_order_id, numero_fatura")
         .in("sales_order_id", selectedPedidos);
 
       if (faturasError) {
-        console.error("Erro ao verificar faturas:", faturasError);
-        // Continuar mesmo se houver erro na verificação
+        logger.error("DELETE", "Erro ao verificar faturas", faturasError);
+        toast.error("Erro ao verificar faturas vinculadas: " + faturasError.message);
+        setDeleteDialogOpen(false);
+        return;
       }
+
+      logger.db(`Faturas encontradas: ${faturas?.length || 0}`, faturas);
 
       if (faturas && faturas.length > 0) {
         const pedidosComFaturas = new Set(faturas.map(f => f.sales_order_id));
         const pedidosSemFaturas = selectedPedidos.filter(id => !pedidosComFaturas.has(id));
 
+        // Se todos têm faturas, perguntar se deseja deletar as faturas primeiro
         if (pedidosSemFaturas.length === 0) {
-          toast.error(
-            "Não é possível excluir os pedidos selecionados. Todos têm faturas vinculadas."
+          logger.warn("DELETE", `Todos os ${selectedPedidos.length} pedidos têm faturas vinculadas`, {
+            pedidosComFaturas: Array.from(pedidosComFaturas),
+            faturas,
+          });
+          
+          const confirmarDeletarFaturas = window.confirm(
+            `Todos os ${selectedPedidos.length} pedido(s) selecionado(s) possuem faturas vinculadas:\n\n` +
+            faturas.map(f => `- ${f.numero_fatura} (Pedido: ${f.sales_order_id.slice(0, 8)}...)`).join('\n') +
+            `\n\nDeseja excluir as faturas e depois os pedidos?\n\n` +
+            `⚠️ ATENÇÃO: Esta ação também excluirá as contas a receber vinculadas às faturas.`
           );
+
+          if (!confirmarDeletarFaturas) {
+            logger.info("DELETE", "Exclusão em massa cancelada pelo usuário");
+            setDeleteDialogOpen(false);
+            return;
+          }
+
+          // Deletar todas as faturas primeiro
+          logger.db(`Deletando ${faturas.length} fatura(s) antes de deletar os pedidos`);
+          const faturaIds = faturas.map(f => f.id);
+          const { error: deleteFaturasError } = await supabase
+            .from("sales_invoices")
+            .delete()
+            .in("id", faturaIds);
+
+          if (deleteFaturasError) {
+            logger.error("DELETE", "Erro ao deletar faturas", deleteFaturasError);
+            toast.error("Erro ao deletar faturas: " + deleteFaturasError.message);
+            setDeleteDialogOpen(false);
+            return;
+          }
+
+          logger.info("DELETE", `✅ ${faturas.length} fatura(s) deletada(s) com sucesso`);
+          toast.success(`${faturas.length} fatura(s) deletada(s). Deletando pedidos...`);
+
+          // Agora deletar todos os pedidos
+          logger.db(`Deletando ${selectedPedidos.length} pedido(s) após deletar faturas`);
+          const { error: deleteError } = await supabase
+            .from("sales_orders")
+            .delete()
+            .in("id", selectedPedidos);
+
+          if (deleteError) {
+            logger.error("DELETE", "Erro ao deletar pedidos", deleteError);
+            throw deleteError;
+          }
+
+          // Verificar se foram deletados
+          const { data: pedidosAindaExistem } = await supabase
+            .from("sales_orders")
+            .select("id")
+            .in("id", selectedPedidos);
+
+          const deletados = selectedPedidos.length - (pedidosAindaExistem?.length || 0);
+
+          if (deletados > 0) {
+            logger.info("DELETE", `✅ ${deletados} pedido(s) excluído(s) com sucesso`);
+            toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
+            setSelectedPedidos([]);
+            await loadSalesOrders();
+          } else {
+            logger.warn("DELETE", `⚠️ Nenhum pedido foi deletado. Verifique permissões RLS.`);
+            toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+          }
           setDeleteDialogOpen(false);
           return;
         }
 
-        // Perguntar se deseja excluir apenas os sem faturas
+        // Alguns têm faturas, outros não
         const confirmar = window.confirm(
-          `${pedidosComFaturas.size} pedido(s) têm faturas vinculadas e não podem ser excluídos.\n\n` +
-          `Deseja excluir apenas os ${pedidosSemFaturas.length} pedido(s) sem faturas?`
+          `${pedidosComFaturas.size} pedido(s) têm faturas vinculadas e ${pedidosSemFaturas.length} pedido(s) não têm.\n\n` +
+          `Opções:\n` +
+          `1. Deletar apenas os ${pedidosSemFaturas.length} pedido(s) sem faturas\n` +
+          `2. Deletar as faturas e depois todos os pedidos\n\n` +
+          `Escolha "OK" para deletar faturas + todos os pedidos, ou "Cancelar" para deletar apenas os sem faturas.`
         );
 
-        if (!confirmar) {
+        if (confirmar) {
+          // Deletar faturas primeiro, depois todos os pedidos
+          logger.db(`Deletando ${faturas.length} fatura(s) antes de deletar todos os pedidos`);
+          const faturaIds = faturas.map(f => f.id);
+          const { error: deleteFaturasError } = await supabase
+            .from("sales_invoices")
+            .delete()
+            .in("id", faturaIds);
+
+          if (deleteFaturasError) {
+            logger.error("DELETE", "Erro ao deletar faturas", deleteFaturasError);
+            toast.error("Erro ao deletar faturas: " + deleteFaturasError.message);
+            setDeleteDialogOpen(false);
+            return;
+          }
+
+          logger.info("DELETE", `✅ ${faturas.length} fatura(s) deletada(s) com sucesso`);
+          toast.success(`${faturas.length} fatura(s) deletada(s). Deletando pedidos...`);
+
+          // Deletar todos os pedidos
+          logger.db(`Deletando ${selectedPedidos.length} pedido(s) após deletar faturas`);
+          const { error: deleteError } = await supabase
+            .from("sales_orders")
+            .delete()
+            .in("id", selectedPedidos);
+
+          if (deleteError) {
+            logger.error("DELETE", "Erro ao deletar pedidos", deleteError);
+            throw deleteError;
+          }
+
+          // Verificar se foram deletados
+          const { data: pedidosAindaExistem } = await supabase
+            .from("sales_orders")
+            .select("id")
+            .in("id", selectedPedidos);
+
+          const deletados = selectedPedidos.length - (pedidosAindaExistem?.length || 0);
+
+          if (deletados > 0) {
+            logger.info("DELETE", `✅ ${deletados} pedido(s) excluído(s) com sucesso`);
+            toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
+            setSelectedPedidos([]);
+            await loadSalesOrders();
+          } else {
+            logger.warn("DELETE", `⚠️ Nenhum pedido foi deletado. Verifique permissões RLS.`);
+            toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+          }
           setDeleteDialogOpen(false);
           return;
-        }
-
-        // Deletar apenas os sem faturas
-        // Os itens serão deletados automaticamente por CASCADE
-        const { error: deleteError } = await supabase
-          .from("sales_orders")
-          .delete()
-          .in("id", pedidosSemFaturas);
-
-        if (deleteError) {
-          throw deleteError;
-        }
-
-        // Verificar se foram deletados
-        const { data: pedidosAindaExistem } = await supabase
-          .from("sales_orders")
-          .select("id")
-          .in("id", pedidosSemFaturas);
-
-        const deletados = pedidosSemFaturas.length - (pedidosAindaExistem?.length || 0);
-
-        if (deletados > 0) {
-          toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
-          setSelectedPedidos([]);
-          await loadSalesOrders();
         } else {
-          toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+          // Deletar apenas os sem faturas
+          logger.db(`Deletando apenas ${pedidosSemFaturas.length} pedido(s) sem faturas`);
+          const { error: deleteError } = await supabase
+            .from("sales_orders")
+            .delete()
+            .in("id", pedidosSemFaturas);
+
+          if (deleteError) {
+            logger.error("DELETE", "Erro ao deletar pedidos", deleteError);
+            throw deleteError;
+          }
+
+          // Verificar se foram deletados
+          const { data: pedidosAindaExistem } = await supabase
+            .from("sales_orders")
+            .select("id")
+            .in("id", pedidosSemFaturas);
+
+          const deletados = pedidosSemFaturas.length - (pedidosAindaExistem?.length || 0);
+
+          if (deletados > 0) {
+            logger.info("DELETE", `✅ ${deletados} pedido(s) excluído(s) com sucesso`);
+            toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
+            setSelectedPedidos([]);
+            await loadSalesOrders();
+          } else {
+            logger.warn("DELETE", `⚠️ Nenhum pedido foi deletado. Verifique permissões RLS.`);
+            toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
+          }
+          setDeleteDialogOpen(false);
+          return;
         }
       } else {
         // Nenhuma fatura vinculada, pode deletar todos
-        // Os itens serão deletados automaticamente por CASCADE
+        logger.db(`Deletando ${selectedPedidos.length} pedido(s) e itens relacionados`);
         const { error: deleteError } = await supabase
           .from("sales_orders")
           .delete()
           .in("id", selectedPedidos);
 
         if (deleteError) {
+          logger.error("DELETE", "Erro ao deletar pedidos", deleteError);
           throw deleteError;
         }
 
@@ -223,16 +512,29 @@ export default function PedidosVenda() {
         const deletados = selectedPedidos.length - (pedidosAindaExistem?.length || 0);
 
         if (deletados > 0) {
+          logger.info("DELETE", `✅ ${deletados} pedido(s) excluído(s) com sucesso`);
           toast.success(`${deletados} pedido(s) excluído(s) com sucesso`);
           setSelectedPedidos([]);
           await loadSalesOrders();
         } else {
+          logger.warn("DELETE", `⚠️ Nenhum pedido foi deletado. Verifique permissões RLS.`);
           toast.error("Não foi possível excluir os pedidos. Verifique suas permissões.");
         }
       }
     } catch (error: any) {
-      console.error("Erro ao excluir pedidos:", error);
-      toast.error("Erro ao excluir pedidos: " + (error.message || "Erro desconhecido"));
+      logger.error("DELETE", "Erro ao excluir pedidos em massa", error);
+      
+      // Mensagens de erro mais específicas
+      let errorMessage = "Erro ao excluir pedidos";
+      if (error.code === '23503') {
+        errorMessage = "Não é possível excluir os pedidos. Existem registros vinculados (faturas, itens, etc.).";
+      } else if (error.code === '42501') {
+        errorMessage = "Você não tem permissão para excluir estes pedidos.";
+      } else if (error.message) {
+        errorMessage = `Erro ao excluir pedidos: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setDeleteDialogOpen(false);
     }
@@ -475,6 +777,15 @@ export default function PedidosVenda() {
                           <Edit className="h-4 w-4" />
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(order)}
+                        title="Excluir Pedido"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -522,6 +833,19 @@ export default function PedidosVenda() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de confirmação de exclusão individual */}
+      <DeleteOrderDialog
+        open={deleteOrderDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteOrderDialogOpen(open);
+          if (!open) {
+            setOrderToDelete(null);
+          }
+        }}
+        orderNumber={orderToDelete?.numero_pedido || `#${orderToDelete?.id?.slice(0, 8) || ""}`}
+        onConfirm={handleDeleteOrder}
+      />
     </div>
   );
 }
