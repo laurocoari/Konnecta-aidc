@@ -49,17 +49,12 @@ export type Database = {
       }
       clients: {
         Row: {
-          anexos: Json | null
           cep: string
           cidade: string
           cnpj: string
           contato_principal: string
           created_at: string
           email: string
-          email_administrativo: string | null
-          email_financeiro: string | null
-          contato_financeiro_nome: string | null
-          telefone_financeiro: string | null
           endereco: string
           estado: string
           exclusive_partner_id: string | null
@@ -69,7 +64,6 @@ export type Database = {
             | null
           id: string
           ie: string | null
-          logomarca_url: string | null
           nome: string
           observacoes: string | null
           origin_partner_id: string | null
@@ -78,17 +72,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          anexos?: Json | null
           cep: string
           cidade: string
           cnpj: string
           contato_principal: string
           created_at?: string
           email: string
-          email_administrativo?: string | null
-          email_financeiro?: string | null
-          contato_financeiro_nome?: string | null
-          telefone_financeiro?: string | null
           endereco: string
           estado: string
           exclusive_partner_id?: string | null
@@ -98,7 +87,6 @@ export type Database = {
             | null
           id?: string
           ie?: string | null
-          logomarca_url?: string | null
           nome: string
           observacoes?: string | null
           origin_partner_id?: string | null
@@ -107,17 +95,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          anexos?: Json | null
           cep?: string
           cidade?: string
           cnpj?: string
           contato_principal?: string
           created_at?: string
           email?: string
-          email_administrativo?: string | null
-          email_financeiro?: string | null
-          contato_financeiro_nome?: string | null
-          telefone_financeiro?: string | null
           endereco?: string
           estado?: string
           exclusive_partner_id?: string | null
@@ -127,7 +110,6 @@ export type Database = {
             | null
           id?: string
           ie?: string | null
-          logomarca_url?: string | null
           nome?: string
           observacoes?: string | null
           origin_partner_id?: string | null
@@ -695,7 +677,6 @@ export type Database = {
           ean: string | null
           especificacoes: Json | null
           estoque_atual: number | null
-          hs_codigo_china: string | null
           estoque_minimo: number | null
           fornecedores_vinculados: Json | null
           galeria: Json | null
@@ -739,7 +720,6 @@ export type Database = {
           ean?: string | null
           especificacoes?: Json | null
           estoque_atual?: number | null
-          hs_codigo_china?: string | null
           estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
@@ -783,7 +763,6 @@ export type Database = {
           ean?: string | null
           especificacoes?: Json | null
           estoque_atual?: number | null
-          hs_codigo_china?: string | null
           estoque_minimo?: number | null
           fornecedores_vinculados?: Json | null
           galeria?: Json | null
