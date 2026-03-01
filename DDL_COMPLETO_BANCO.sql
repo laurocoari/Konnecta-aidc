@@ -1,7 +1,8 @@
 -- =====================================================================
 -- DDL COMPLETO - BANCO DE DADOS KONNECTA ERP
--- Gerado em: 2026-02-28
+-- Atualizado em: 2026-03-01
 -- Compatível com: PostgreSQL 15+ / Supabase
+-- Inclui todas as 47 tabelas do sistema
 -- =====================================================================
 
 -- =====================================================================
@@ -840,6 +841,621 @@ CREATE POLICY "Users can delete own simulations" ON public.roi_simulations FOR D
 CREATE POLICY "Users can update own simulations" ON public.roi_simulations FOR UPDATE USING (created_by = auth.uid());
 
 -- =====================================================================
+-- TABELAS ADICIONAIS (criadas em 2026-03-01)
+-- =====================================================================
+
+-- ----- categories -----
+CREATE TABLE public.categories (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome TEXT NOT NULL,
+  descricao TEXT,
+  observacoes TEXT,
+  status TEXT NOT NULL DEFAULT 'ativa'::text,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- contacts (CRM) -----
+CREATE TABLE public.contacts (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome TEXT NOT NULL,
+  email TEXT,
+  telefone TEXT,
+  empresa TEXT,
+  tipo TEXT NOT NULL DEFAULT 'lead'::text,
+  origem TEXT,
+  etapa_funil TEXT NOT NULL DEFAULT 'novo'::text,
+  observacoes TEXT,
+  responsavel_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- opportunities_crm (depende de contacts) -----
+CREATE TABLE public.opportunities_crm (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome TEXT NOT NULL,
+  contact_id UUID,
+  valor_estimado NUMERIC,
+  probabilidade INTEGER DEFAULT 50,
+  etapa TEXT NOT NULL DEFAULT 'proposta'::text,
+  status TEXT NOT NULL DEFAULT 'ativa'::text,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT opportunities_crm_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.contacts(id)
+);
+
+-- ----- openai_config -----
+CREATE TABLE public.openai_config (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  api_key_encrypted TEXT,
+  model TEXT DEFAULT 'gpt-4o-mini'::text,
+  max_tokens INTEGER DEFAULT 2000,
+  enabled BOOLEAN DEFAULT false,
+  updated_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- quote_settings -----
+CREATE TABLE public.quote_settings (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  valor_dolar_atual NUMERIC DEFAULT 5.0,
+  margem_padrao NUMERIC DEFAULT 30,
+  prazo_validade_dias INTEGER DEFAULT 30,
+  observacoes TEXT,
+  updated_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- purchase_orders (depende de suppliers) -----
+CREATE TABLE public.purchase_orders (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  supplier_id UUID,
+  status TEXT NOT NULL DEFAULT 'rascunho'::text,
+  data_emissao DATE NOT NULL DEFAULT CURRENT_DATE,
+  data_entrega_prevista DATE,
+  total_geral NUMERIC DEFAULT 0,
+  observacoes TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT purchase_orders_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id)
+);
+
+-- ----- purchase_order_items (depende de purchase_orders, products) -----
+CREATE TABLE public.purchase_order_items (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  purchase_order_id UUID NOT NULL,
+  product_id UUID,
+  codigo_fornecedor TEXT,
+  quantidade INTEGER NOT NULL DEFAULT 1,
+  preco_unitario NUMERIC NOT NULL DEFAULT 0,
+  desconto_percentual NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT poi_po_fkey FOREIGN KEY (purchase_order_id) REFERENCES public.purchase_orders(id) ON DELETE CASCADE,
+  CONSTRAINT poi_product_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+
+-- ----- product_supplier_codes (depende de products, suppliers) -----
+CREATE TABLE public.product_supplier_codes (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  product_id UUID NOT NULL,
+  supplier_id UUID NOT NULL,
+  codigo_fornecedor TEXT NOT NULL,
+  codigo_principal BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT psc_product_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE,
+  CONSTRAINT psc_supplier_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id) ON DELETE CASCADE
+);
+
+-- ----- bank_accounts -----
+CREATE TABLE public.bank_accounts (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome_banco TEXT NOT NULL,
+  agencia TEXT,
+  conta TEXT,
+  tipo TEXT DEFAULT 'corrente'::text,
+  descricao TEXT,
+  saldo_atual NUMERIC DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ativo'::text,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- bank_transactions (depende de bank_accounts) -----
+CREATE TABLE public.bank_transactions (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  bank_account_id UUID NOT NULL,
+  tipo TEXT NOT NULL,
+  valor NUMERIC NOT NULL,
+  data_movimento TIMESTAMPTZ NOT NULL DEFAULT now(),
+  descricao TEXT,
+  categoria TEXT,
+  referencia_tipo TEXT,
+  referencia_id UUID,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT bt_bank_fkey FOREIGN KEY (bank_account_id) REFERENCES public.bank_accounts(id) ON DELETE CASCADE
+);
+
+-- ----- accounts_receivable (depende de contacts) -----
+CREATE TABLE public.accounts_receivable (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  contact_id UUID,
+  descricao TEXT,
+  valor_total NUMERIC NOT NULL DEFAULT 0,
+  valor_pago NUMERIC DEFAULT 0,
+  data_emissao DATE DEFAULT CURRENT_DATE,
+  data_vencimento DATE,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  observacoes TEXT,
+  origem TEXT DEFAULT 'manual'::text,
+  referencia_id UUID,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ar_contact_fkey FOREIGN KEY (contact_id) REFERENCES public.contacts(id)
+);
+
+-- ----- accounts_receivable_payments (depende de accounts_receivable) -----
+CREATE TABLE public.accounts_receivable_payments (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  account_receivable_id UUID NOT NULL,
+  valor NUMERIC NOT NULL,
+  data_pagamento DATE NOT NULL DEFAULT CURRENT_DATE,
+  forma_pagamento TEXT,
+  observacoes TEXT,
+  bank_account_id UUID,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT arp_ar_fkey FOREIGN KEY (account_receivable_id) REFERENCES public.accounts_receivable(id) ON DELETE CASCADE
+);
+
+-- ----- accounts_payable (depende de suppliers) -----
+CREATE TABLE public.accounts_payable (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  supplier_id UUID,
+  descricao TEXT,
+  categoria TEXT,
+  valor_total NUMERIC NOT NULL DEFAULT 0,
+  valor_pago NUMERIC DEFAULT 0,
+  data_emissao DATE DEFAULT CURRENT_DATE,
+  data_vencimento DATE,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  observacoes TEXT,
+  origem TEXT DEFAULT 'manual'::text,
+  referencia_id UUID,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ap_supplier_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id)
+);
+
+-- ----- accounts_payable_payments (depende de accounts_payable) -----
+CREATE TABLE public.accounts_payable_payments (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  account_payable_id UUID NOT NULL,
+  valor NUMERIC NOT NULL,
+  data_pagamento DATE NOT NULL DEFAULT CURRENT_DATE,
+  forma_pagamento TEXT,
+  observacoes TEXT,
+  bank_account_id UUID,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT app_ap_fkey FOREIGN KEY (account_payable_id) REFERENCES public.accounts_payable(id) ON DELETE CASCADE
+);
+
+-- ----- commissions (depende de proposals) -----
+CREATE TABLE public.commissions (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  vendedor_id UUID,
+  proposta_id UUID,
+  sales_order_id UUID,
+  valor_base NUMERIC DEFAULT 0,
+  percentual NUMERIC DEFAULT 0,
+  valor_comissao NUMERIC DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  observacoes TEXT,
+  accounts_payable_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT commissions_proposta_fkey FOREIGN KEY (proposta_id) REFERENCES public.proposals(id)
+);
+
+-- ----- commission_rules -----
+CREATE TABLE public.commission_rules (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome TEXT NOT NULL,
+  percentual NUMERIC NOT NULL DEFAULT 0,
+  tipo_operacao TEXT,
+  categoria_produto TEXT,
+  vendedor_id UUID,
+  ativo BOOLEAN DEFAULT true,
+  observacoes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- sales_orders (depende de clients, proposals) -----
+CREATE TABLE public.sales_orders (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  numero_pedido TEXT NOT NULL,
+  cliente_id UUID,
+  proposta_id UUID,
+  vendedor_id UUID,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  data_pedido DATE DEFAULT CURRENT_DATE,
+  data_entrega DATE,
+  valor_total NUMERIC DEFAULT 0,
+  desconto_total NUMERIC DEFAULT 0,
+  total_geral NUMERIC DEFAULT 0,
+  forma_pagamento TEXT,
+  condicoes_pagamento TEXT,
+  observacoes TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT so_cliente_fkey FOREIGN KEY (cliente_id) REFERENCES public.clients(id),
+  CONSTRAINT so_proposta_fkey FOREIGN KEY (proposta_id) REFERENCES public.proposals(id)
+);
+
+-- ----- sales_order_items (depende de sales_orders, products) -----
+CREATE TABLE public.sales_order_items (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  sales_order_id UUID NOT NULL,
+  product_id UUID,
+  descricao TEXT NOT NULL,
+  codigo TEXT,
+  quantidade INTEGER NOT NULL DEFAULT 1,
+  preco_unitario NUMERIC NOT NULL DEFAULT 0,
+  desconto NUMERIC DEFAULT 0,
+  total NUMERIC NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT soi_so_fkey FOREIGN KEY (sales_order_id) REFERENCES public.sales_orders(id) ON DELETE CASCADE,
+  CONSTRAINT soi_product_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+
+-- ----- sales_order_logs (depende de sales_orders) -----
+CREATE TABLE public.sales_order_logs (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  sales_order_id UUID NOT NULL,
+  tipo TEXT NOT NULL,
+  descricao TEXT,
+  dados_anteriores JSONB,
+  dados_novos JSONB,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT sol_so_fkey FOREIGN KEY (sales_order_id) REFERENCES public.sales_orders(id) ON DELETE CASCADE
+);
+
+-- ----- cotacoes_compras (depende de suppliers, clients) -----
+CREATE TABLE public.cotacoes_compras (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  numero_cotacao TEXT,
+  supplier_id UUID,
+  cliente_final_id UUID,
+  nome_cliente_final TEXT,
+  cidade_cliente_final TEXT,
+  estado_cliente_final TEXT,
+  tipo_cotacao TEXT,
+  moeda TEXT DEFAULT 'BRL'::text,
+  distribuidor TEXT,
+  proposta_numero TEXT,
+  data_cotacao DATE NOT NULL DEFAULT CURRENT_DATE,
+  validade DATE,
+  total_cotacao NUMERIC DEFAULT 0,
+  quantidade_itens INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  observacoes TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT cc_supplier_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id),
+  CONSTRAINT cc_cliente_fkey FOREIGN KEY (cliente_final_id) REFERENCES public.clients(id)
+);
+
+-- ----- cotacoes_compras_itens (depende de cotacoes_compras, products) -----
+CREATE TABLE public.cotacoes_compras_itens (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  cotacao_id UUID NOT NULL,
+  product_id UUID,
+  codigo_produto TEXT,
+  descricao TEXT,
+  quantidade NUMERIC,
+  preco_unitario NUMERIC,
+  desconto NUMERIC DEFAULT 0,
+  total NUMERIC,
+  observacoes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT cci_cotacao_fkey FOREIGN KEY (cotacao_id) REFERENCES public.cotacoes_compras(id) ON DELETE CASCADE,
+  CONSTRAINT cci_product_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+
+-- ----- warehouses -----
+CREATE TABLE public.warehouses (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome TEXT NOT NULL,
+  endereco TEXT,
+  cidade TEXT,
+  estado TEXT,
+  cep TEXT,
+  responsavel TEXT,
+  status TEXT NOT NULL DEFAULT 'ativo'::text,
+  observacoes TEXT,
+  token_publico TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- tasks -----
+CREATE TABLE public.tasks (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  titulo TEXT NOT NULL,
+  descricao TEXT,
+  prioridade TEXT DEFAULT 'media'::text,
+  status TEXT NOT NULL DEFAULT 'pendente'::text,
+  categoria TEXT,
+  data_vencimento DATE,
+  responsavel_id UUID,
+  referencia_tipo TEXT,
+  referencia_id UUID,
+  concluido_em TIMESTAMPTZ,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- tickets -----
+CREATE TABLE public.tickets (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  titulo TEXT NOT NULL,
+  descricao TEXT,
+  categoria TEXT,
+  prioridade TEXT DEFAULT 'media'::text,
+  status TEXT NOT NULL DEFAULT 'aberto'::text,
+  cliente_id UUID,
+  responsavel_id UUID,
+  resolvido_em TIMESTAMPTZ,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- ticket_comments (depende de tickets) -----
+CREATE TABLE public.ticket_comments (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  ticket_id UUID NOT NULL,
+  conteudo TEXT NOT NULL,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tc_ticket_fkey FOREIGN KEY (ticket_id) REFERENCES public.tickets(id) ON DELETE CASCADE
+);
+
+-- ----- rental_receipts -----
+CREATE TABLE public.rental_receipts (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  numero_recibo TEXT NOT NULL,
+  cliente_id UUID,
+  account_receivable_id UUID,
+  proposta_id UUID,
+  sales_order_id UUID,
+  data_emissao DATE DEFAULT CURRENT_DATE,
+  periodo_inicio DATE,
+  periodo_fim DATE,
+  valor_total NUMERIC DEFAULT 0,
+  bank_account_id UUID,
+  observacoes TEXT,
+  pdf_url TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----- rental_receipt_items (depende de rental_receipts, products) -----
+CREATE TABLE public.rental_receipt_items (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  rental_receipt_id UUID NOT NULL,
+  descricao TEXT NOT NULL,
+  product_id UUID,
+  quantidade INTEGER DEFAULT 1,
+  valor_unitario NUMERIC DEFAULT 0,
+  valor_total NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT rri_receipt_fkey FOREIGN KEY (rental_receipt_id) REFERENCES public.rental_receipts(id) ON DELETE CASCADE,
+  CONSTRAINT rri_product_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+
+-- =====================================================================
+-- INDEXES ADICIONAIS (tabelas novas)
+-- =====================================================================
+
+CREATE INDEX idx_contacts_tipo ON public.contacts USING btree (tipo);
+CREATE INDEX idx_contacts_etapa ON public.contacts USING btree (etapa_funil);
+CREATE INDEX idx_opportunities_crm_contact ON public.opportunities_crm USING btree (contact_id);
+CREATE INDEX idx_opportunities_crm_etapa ON public.opportunities_crm USING btree (etapa);
+CREATE INDEX idx_purchase_orders_supplier ON public.purchase_orders USING btree (supplier_id);
+CREATE INDEX idx_purchase_orders_status ON public.purchase_orders USING btree (status);
+CREATE INDEX idx_purchase_order_items_po ON public.purchase_order_items USING btree (purchase_order_id);
+CREATE INDEX idx_product_supplier_codes_product ON public.product_supplier_codes USING btree (product_id);
+CREATE INDEX idx_product_supplier_codes_supplier ON public.product_supplier_codes USING btree (supplier_id);
+CREATE INDEX idx_bank_transactions_bank ON public.bank_transactions USING btree (bank_account_id);
+CREATE INDEX idx_accounts_receivable_status ON public.accounts_receivable USING btree (status);
+CREATE INDEX idx_accounts_receivable_contact ON public.accounts_receivable USING btree (contact_id);
+CREATE INDEX idx_accounts_payable_status ON public.accounts_payable USING btree (status);
+CREATE INDEX idx_accounts_payable_supplier ON public.accounts_payable USING btree (supplier_id);
+CREATE INDEX idx_commissions_vendedor ON public.commissions USING btree (vendedor_id);
+CREATE INDEX idx_commissions_proposta ON public.commissions USING btree (proposta_id);
+CREATE INDEX idx_sales_orders_cliente ON public.sales_orders USING btree (cliente_id);
+CREATE INDEX idx_sales_orders_status ON public.sales_orders USING btree (status);
+CREATE INDEX idx_sales_order_items_so ON public.sales_order_items USING btree (sales_order_id);
+CREATE INDEX idx_cotacoes_compras_supplier ON public.cotacoes_compras USING btree (supplier_id);
+CREATE INDEX idx_cotacoes_compras_status ON public.cotacoes_compras USING btree (status);
+CREATE INDEX idx_cotacoes_itens_cotacao ON public.cotacoes_compras_itens USING btree (cotacao_id);
+CREATE INDEX idx_tasks_status ON public.tasks USING btree (status);
+CREATE INDEX idx_tasks_responsavel ON public.tasks USING btree (responsavel_id);
+CREATE INDEX idx_tickets_status ON public.tickets USING btree (status);
+CREATE INDEX idx_ticket_comments_ticket ON public.ticket_comments USING btree (ticket_id);
+CREATE INDEX idx_rental_receipts_cliente ON public.rental_receipts USING btree (cliente_id);
+
+-- =====================================================================
+-- TRIGGERS ADICIONAIS (tabelas novas)
+-- =====================================================================
+
+CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON public.categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_contacts_updated_at BEFORE UPDATE ON public.contacts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_opportunities_crm_updated_at BEFORE UPDATE ON public.opportunities_crm FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_openai_config_updated_at BEFORE UPDATE ON public.openai_config FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_quote_settings_updated_at BEFORE UPDATE ON public.quote_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_bank_accounts_updated_at BEFORE UPDATE ON public.bank_accounts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_accounts_receivable_updated_at BEFORE UPDATE ON public.accounts_receivable FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_accounts_payable_updated_at BEFORE UPDATE ON public.accounts_payable FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_commissions_updated_at BEFORE UPDATE ON public.commissions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_commission_rules_updated_at BEFORE UPDATE ON public.commission_rules FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_sales_orders_updated_at BEFORE UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_cotacoes_compras_updated_at BEFORE UPDATE ON public.cotacoes_compras FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON public.tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_tickets_updated_at BEFORE UPDATE ON public.tickets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_rental_receipts_updated_at BEFORE UPDATE ON public.rental_receipts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================================
+-- RLS HABILITAÇÃO (tabelas novas)
+-- =====================================================================
+
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.opportunities_crm ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.openai_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quote_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_supplier_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accounts_receivable ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accounts_receivable_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accounts_payable ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accounts_payable_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commission_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_order_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cotacoes_compras ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cotacoes_compras_itens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ticket_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rental_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rental_receipt_items ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================================
+-- RLS POLICIES (tabelas novas)
+-- =====================================================================
+
+-- ----- categories -----
+CREATE POLICY "Admins can manage categories" ON public.categories FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial can view categories" ON public.categories FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- contacts -----
+CREATE POLICY "Admins and comercial can manage contacts" ON public.contacts FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- opportunities_crm -----
+CREATE POLICY "Admins and comercial can manage opportunities_crm" ON public.opportunities_crm FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- openai_config -----
+CREATE POLICY "Admins can manage openai_config" ON public.openai_config FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+
+-- ----- quote_settings -----
+CREATE POLICY "Admins can manage quote_settings" ON public.quote_settings FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial can view quote_settings" ON public.quote_settings FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- purchase_orders -----
+CREATE POLICY "Admins can manage purchase_orders" ON public.purchase_orders FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial can view purchase_orders" ON public.purchase_orders FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- purchase_order_items -----
+CREATE POLICY "Admins can manage purchase_order_items" ON public.purchase_order_items FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial can view purchase_order_items" ON public.purchase_order_items FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- product_supplier_codes -----
+CREATE POLICY "Admins can manage product_supplier_codes" ON public.product_supplier_codes FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial can view product_supplier_codes" ON public.product_supplier_codes FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- bank_accounts -----
+CREATE POLICY "Admins and financeiro can manage bank_accounts" ON public.bank_accounts FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- bank_transactions -----
+CREATE POLICY "Admins and financeiro can manage bank_transactions" ON public.bank_transactions FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- accounts_receivable -----
+CREATE POLICY "Admins and financeiro can manage AR" ON public.accounts_receivable FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+CREATE POLICY "Comercial can view AR" ON public.accounts_receivable FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- accounts_receivable_payments -----
+CREATE POLICY "Admins and financeiro can manage AR payments" ON public.accounts_receivable_payments FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- accounts_payable -----
+CREATE POLICY "Admins and financeiro can manage AP" ON public.accounts_payable FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+CREATE POLICY "Comercial can view AP" ON public.accounts_payable FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- accounts_payable_payments -----
+CREATE POLICY "Admins and financeiro can manage AP payments" ON public.accounts_payable_payments FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- commissions -----
+CREATE POLICY "Admins and financeiro can manage commissions" ON public.commissions FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+CREATE POLICY "Comercial can view commissions" ON public.commissions FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- commission_rules -----
+CREATE POLICY "Admins can manage commission_rules" ON public.commission_rules FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Comercial and financeiro can view commission_rules" ON public.commission_rules FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- sales_orders -----
+CREATE POLICY "Admins and comercial can manage sales_orders" ON public.sales_orders FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+CREATE POLICY "Financeiro can view sales_orders" ON public.sales_orders FOR SELECT USING (has_role(auth.uid(), 'financeiro'::user_role));
+
+-- ----- sales_order_items -----
+CREATE POLICY "Admins and comercial can manage sales_order_items" ON public.sales_order_items FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- sales_order_logs -----
+CREATE POLICY "Admins and comercial can manage sales_order_logs" ON public.sales_order_logs FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- cotacoes_compras -----
+CREATE POLICY "Admins and comercial can manage cotacoes_compras" ON public.cotacoes_compras FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- cotacoes_compras_itens -----
+CREATE POLICY "Admins and comercial can manage cotacoes_itens" ON public.cotacoes_compras_itens FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- warehouses -----
+CREATE POLICY "Admins can manage warehouses" ON public.warehouses FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Anyone can view active warehouses" ON public.warehouses FOR SELECT USING (status = 'ativo'::text);
+CREATE POLICY "Public access via token" ON public.warehouses FOR SELECT USING (token_publico IS NOT NULL);
+
+-- ----- tasks -----
+CREATE POLICY "Admins can manage all tasks" ON public.tasks FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Users can manage own tasks" ON public.tasks FOR ALL USING ((auth.uid() = responsavel_id) OR (auth.uid() = created_by));
+
+-- ----- tickets -----
+CREATE POLICY "Admins can manage all tickets" ON public.tickets FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Users can manage own tickets" ON public.tickets FOR ALL USING ((auth.uid() = responsavel_id) OR (auth.uid() = created_by));
+
+-- ----- ticket_comments -----
+CREATE POLICY "Admins can manage all ticket_comments" ON public.ticket_comments FOR ALL USING (has_role(auth.uid(), 'admin'::user_role));
+CREATE POLICY "Users can manage own ticket_comments" ON public.ticket_comments FOR ALL USING (auth.uid() = created_by);
+
+-- ----- rental_receipts -----
+CREATE POLICY "Admins and financeiro can manage rental_receipts" ON public.rental_receipts FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+CREATE POLICY "Comercial can view rental_receipts" ON public.rental_receipts FOR SELECT USING (has_role(auth.uid(), 'comercial'::user_role));
+
+-- ----- rental_receipt_items -----
+CREATE POLICY "Admins and financeiro can manage rental_receipt_items" ON public.rental_receipt_items FOR ALL USING (has_role(auth.uid(), 'admin'::user_role) OR has_role(auth.uid(), 'financeiro'::user_role));
+
+-- =====================================================================
 -- 9. STORAGE BUCKETS (Supabase-specific)
 -- =====================================================================
 
@@ -847,5 +1463,5 @@ CREATE POLICY "Users can update own simulations" ON public.roi_simulations FOR U
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('product-media', 'product-media', true);
 
 -- =====================================================================
--- FIM DO DDL
+-- FIM DO DDL - 47 tabelas completas
 -- =====================================================================
