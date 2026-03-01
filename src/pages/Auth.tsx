@@ -13,6 +13,8 @@ export default function Auth() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
   const [savedEmail, setSavedEmail] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
 
@@ -130,6 +132,66 @@ export default function Auth() {
     setLoading(false);
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      toast.error("Por favor, informe seu e-mail");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("E-mail de recuperação enviado! Verifique sua caixa de entrada.");
+      setShowForgotPassword(false);
+    }
+    setLoading(false);
+  };
+
+  if (showForgotPassword) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/20 via-background to-secondary/20 p-4">
+        <Card className="glass-strong w-full max-w-md p-8">
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-bold text-primary">Konnecta CRM</h1>
+            <p className="text-sm text-muted-foreground">Recuperação de Senha</p>
+          </div>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">E-mail cadastrado</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="seu@email.com"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                required
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Enviaremos um link para redefinir sua senha.
+            </p>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Enviando..." : "Enviar Link de Recuperação"}
+            </Button>
+          </form>
+          <div className="mt-4 text-center">
+            <Button
+              variant="link"
+              onClick={() => setShowForgotPassword(false)}
+              className="text-sm text-muted-foreground"
+            >
+              Voltar para Login
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/20 via-background to-secondary/20 p-4">
       <Card className="glass-strong w-full max-w-md p-8">
@@ -170,19 +232,29 @@ export default function Auth() {
                   required
                 />
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="remember"
-                  name="remember"
-                  checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked === true)}
-                />
-                <Label
-                  htmlFor="remember"
-                  className="text-sm font-normal cursor-pointer"
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="remember"
+                    name="remember"
+                    checked={rememberMe}
+                    onCheckedChange={(checked) => setRememberMe(checked === true)}
+                  />
+                  <Label
+                    htmlFor="remember"
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    Lembrar senha
+                  </Label>
+                </div>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="text-xs text-muted-foreground p-0 h-auto"
+                  onClick={() => setShowForgotPassword(true)}
                 >
-                  Lembrar senha
-                </Label>
+                  Esqueci minha senha
+                </Button>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Entrando..." : "Entrar"}
