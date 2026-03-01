@@ -22,6 +22,7 @@ import Financeiro from "./pages/Financeiro";
 import Configuracoes from "./pages/Configuracoes";
 import Auth from "./pages/Auth";
 import AuthParceiro from "./pages/AuthParceiro";
+import ResetPassword from "./pages/ResetPassword";
 import CentralParceiro from "./pages/CentralParceiro";
 import CatalogoProdutos from "./pages/CatalogoProdutos";
 import AprovarParceiros from "./pages/AprovarParceiros";
@@ -68,6 +69,7 @@ const App = () => {
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/parceiro" element={<AuthParceiro />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/proposta/:codigo" element={<PropostaPublica />} />
           <Route path="/estoque/public/:id" element={<EstoquePublico />} />
           <Route
